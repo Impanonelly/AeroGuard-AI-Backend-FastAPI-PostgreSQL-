@@ -1,0 +1,55 @@
+═══════════════════════════════════════════════════════════════
+  QUICK FIX - Your Virtual Environment is Corrupted
+═══════════════════════════════════════════════════════════════
+
+YOUR VENV IS BROKEN. Here's how to fix it:
+
+═══════════════════════════════════════════════════════════════
+  OPTION 1: Recreate Virtual Environment (RECOMMENDED)
+═══════════════════════════════════════════════════════════════
+
+Copy and paste these commands ONE BY ONE in your terminal:
+
+1. Deactivate current venv:
+   deactivate
+
+2. Delete broken venv:
+   Remove-Item -Recurse -Force venv
+
+3. Create new venv:
+   python -m venv venv
+
+4. Activate new venv:
+   .\venv\Scripts\Activate.ps1
+
+5. Upgrade pip:
+   python -m pip install --upgrade pip
+
+6. Install dependencies (use the simple requirements):
+   pip install -r requirements_simple.txt
+
+   OR install manually:
+   pip install uvicorn[standard] fastapi sqlalchemy psycopg2-binary python-dotenv pydantic passlib[bcrypt] python-jose[cryptography] python-multipart email-validator
+
+7. Start server:
+   python -m uvicorn main:app --reload
+
+═══════════════════════════════════════════════════════════════
+  OPTION 2: Use Global Python (QUICK FIX - Works Now!)
+═══════════════════════════════════════════════════════════════
+
+Since packages are already installed globally, just:
+
+1. Deactivate venv:
+   deactivate
+
+2. Start server:
+   python -m uvicorn main:app --reload
+
+═══════════════════════════════════════════════════════════════
+
+RECOMMENDATION: Use Option 2 for now to get it working,
+then do Option 1 later for a clean setup.
+
+═══════════════════════════════════════════════════════════════
+
