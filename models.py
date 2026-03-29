@@ -61,11 +61,11 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    health_records = relationship("HealthRecord", back_populates="user", cascade="all, delete-orphan")
-    alcohol_screenings = relationship("AlcoholScreening", back_populates="user", cascade="all, delete-orphan")
-    duty_periods = relationship("DutyPeriod", back_populates="user", cascade="all, delete-orphan")
-    fitness_assessments = relationship("FitnessAssessment", back_populates="user", cascade="all, delete-orphan")
-    audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
+    health_records = relationship("HealthRecord", back_populates="user", cascade="all, delete-orphan", foreign_keys="[HealthRecord.user_id]")
+    alcohol_screenings = relationship("AlcoholScreening", back_populates="user", cascade="all, delete-orphan", foreign_keys="[AlcoholScreening.user_id]")
+    duty_periods = relationship("DutyPeriod", back_populates="user", cascade="all, delete-orphan", foreign_keys="[DutyPeriod.user_id]")
+    fitness_assessments = relationship("FitnessAssessment", back_populates="user", cascade="all, delete-orphan", foreign_keys="[FitnessAssessment.user_id]")
+    audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan", foreign_keys="[AuditLog.user_id]")
 
 # ============================================================================
 # PILOT MODEL (legacy — kept for backward compat)
@@ -198,7 +198,7 @@ class DutyPeriod(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    user = relationship("User", back_populates="duty_periods")
+    user = relationship("User", back_populates="duty_periods", foreign_keys=[user_id])
 
 # ============================================================================
 # FITNESS ASSESSMENT MODEL
@@ -276,7 +276,7 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    user = relationship("User", back_populates="audit_logs")
+    user = relationship("User", back_populates="audit_logs", foreign_keys=[user_id])
 
 # ============================================================================
 # NOTIFICATION MODEL
