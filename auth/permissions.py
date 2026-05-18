@@ -28,6 +28,22 @@ VIEW_COMPLIANCE = "view_compliance"
 VIEW_SUBSTANCE_RECORDS = "view_substance_records"
 VIEW_AUDIT_LOGS = "view_audit_logs"
 
+# NEW — Module-specific view permissions
+VIEW_MEDICAL_RECORDS = "view_medical_records"
+CREATE_MEDICAL_RECORDS = "create_medical_records"
+VIEW_FRMS_DATA = "view_frms_data"
+MANAGE_FRMS = "manage_frms"
+VIEW_SAFETY_ANALYTICS = "view_safety_analytics"
+REPORT_SAFETY_INCIDENT = "report_safety_incident"
+MANAGE_SAFETY_INCIDENTS = "manage_safety_incidents"
+VIEW_RISK_PREDICTIONS = "view_risk_predictions"
+MANAGE_COMPLIANCE = "manage_compliance"
+VIEW_ALERTNESS_DATA = "view_alertness_data"
+SUBMIT_ALERTNESS_READING = "submit_alertness_reading"
+MANAGE_IOT_DEVICES = "manage_iot_devices"
+VIEW_SECURITY_SETTINGS = "view_security_settings"
+MANAGE_SECURITY_SETTINGS = "manage_security_settings"
+
 # Action Permissions
 SUBMIT_ASSESSMENT = "submit_assessment"
 OVERRIDE_ASSESSMENT = "override_assessment"
@@ -41,6 +57,10 @@ ROLE_PERMISSIONS = {
     UserRole.AVIATOR: [
         VIEW_OWN_PROFILE,
         SUBMIT_ASSESSMENT,
+        SUBMIT_ALERTNESS_READING,
+        VIEW_ALERTNESS_DATA,        # own data only (enforced in endpoints)
+        VIEW_RISK_PREDICTIONS,      # own data only
+        REPORT_SAFETY_INCIDENT,
     ],
     UserRole.SUPERVISOR: [
         VIEW_OWN_PROFILE,
@@ -49,6 +69,13 @@ ROLE_PERMISSIONS = {
         OVERRIDE_ASSESSMENT,
         VIEW_SUBSTANCE_RECORDS,
         VIEW_REPORTS,
+        GENERATE_REPORTS,
+        VIEW_FRMS_DATA,
+        MANAGE_FRMS,
+        VIEW_RISK_PREDICTIONS,
+        VIEW_ALERTNESS_DATA,
+        SUBMIT_ALERTNESS_READING,
+        REPORT_SAFETY_INCIDENT,
     ],
     UserRole.SAFETY_OFFICER: [
         VIEW_OWN_PROFILE,
@@ -59,6 +86,31 @@ ROLE_PERMISSIONS = {
         VIEW_COMPLIANCE,
         VIEW_SUBSTANCE_RECORDS,
         GENERATE_REPORTS,
+        SUBMIT_ASSESSMENT,
+        VIEW_FRMS_DATA,
+        MANAGE_FRMS,
+        VIEW_SAFETY_ANALYTICS,
+        REPORT_SAFETY_INCIDENT,
+        MANAGE_SAFETY_INCIDENTS,
+        VIEW_RISK_PREDICTIONS,
+        MANAGE_COMPLIANCE,
+        VIEW_ALERTNESS_DATA,
+        SUBMIT_ALERTNESS_READING,
+        VIEW_AUDIT_LOGS,
+        MANAGE_IOT_DEVICES,
+    ],
+    UserRole.MEDICAL_OFFICER: [
+        VIEW_OWN_PROFILE,
+        VIEW_CREW_DATA,
+        VIEW_REPORTS,
+        VIEW_COMPLIANCE,
+        VIEW_SUBSTANCE_RECORDS,
+        SUBMIT_ASSESSMENT,
+        VIEW_MEDICAL_RECORDS,
+        CREATE_MEDICAL_RECORDS,
+        VIEW_ALERTNESS_DATA,
+        VIEW_RISK_PREDICTIONS,      # read-only for medical context
+        REPORT_SAFETY_INCIDENT,
     ],
     UserRole.ADMINISTRATOR: [
         VIEW_OWN_PROFILE,
@@ -75,6 +127,20 @@ ROLE_PERMISSIONS = {
         MANAGE_SYSTEM,
         GENERATE_REPORTS,
         CONFIGURE_SYSTEM,
+        VIEW_MEDICAL_RECORDS,
+        CREATE_MEDICAL_RECORDS,
+        VIEW_FRMS_DATA,
+        MANAGE_FRMS,
+        VIEW_SAFETY_ANALYTICS,
+        REPORT_SAFETY_INCIDENT,
+        MANAGE_SAFETY_INCIDENTS,
+        VIEW_RISK_PREDICTIONS,
+        MANAGE_COMPLIANCE,
+        VIEW_ALERTNESS_DATA,
+        SUBMIT_ALERTNESS_READING,
+        MANAGE_IOT_DEVICES,
+        VIEW_SECURITY_SETTINGS,
+        MANAGE_SECURITY_SETTINGS,
     ],
 }
 

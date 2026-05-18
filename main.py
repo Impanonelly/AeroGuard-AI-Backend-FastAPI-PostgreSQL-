@@ -1,264 +1,181 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from typing import List
-from database import engine, get_db
-from models import (
-    Base, Pilot, User,
-    HealthRecord, AlcoholScreening,
-    DutyPeriod, FitnessAssessment,
-    AuditLog, Notification
-)
-from schemas import PilotAssessment, AssessmentResponse, PilotResponse, PilotCreate
+from database import engine
+from models import Base
+
+# ── Core routers (existing) ──────────────────────────────────────────────────
 from routers import auth
-from routers import alcohol, health, duty, assessment
-from auth.dependencies import get_current_user
-from auth.permissions import (
-    require_supervisor_or_above,
-    require_safety_officer_or_above,
-    VIEW_CREW_DATA,
-    VIEW_ALL_PERSONNEL,
-    SUBMIT_ASSESSMENT,
-    has_permission
-)
+from routers import alcohol, health, duty, assessment, reports, notifications, substance, personnel, webauthn
 
+# ── Expanded / new routers ───────────────────────────────────────────────────
+from routers import iot
+from routers import dashboard
+from routers import medical_records
+from routers import alertness
+from routers import risk_prediction
+from routers import frms
+from routers import safety_analytics
+from routers import compliance
+from routers import user_management
+from routers import audit_logs
+from routers import security_settings
+
+# ── AI Engine ────────────────────────────────────────────────────────────────
+from ai_engine.model import predict_risk as calculate_risk  # noqa: F401
+
+# ── App Configuration ────────────────────────────────────────────────────────
 app = FastAPI(
-    title="AeroGuard AI Backend",
-    description="Pilot Fatigue and Risk Assessment System",
-    version="1.0.0"
+    title="AeroGuard AI — Aircrew Health & Alertness Monitoring System",
+    description=(
+        "AI-powered aviation safety platform for Akagera Aviation Ltd, Rwanda.\n\n"
+        "Monitors aircrew health, fatigue, alertness, operational readiness, "
+        "alcohol & substance compliance, and flight-duty safety.\n\n"
+        "Aligned with RCAA operational safety requirements and ICAO standards.\n\n"
+        "**AI role**: Predictive analysis and decision-support only. "
+        "Human decision-making is preserved at all levels."
+    ),
+    version="2.0.0",
+    contact={
+        "name": "AeroGuard AI — Akagera Aviation Ltd",
+        "url": "https://akageraaviation.com",
+    },
+    license_info={
+        "name": "RCAA Certified Aviation Safety System",
+    },
+    openapi_tags=[
+        {"name": "authentication",         "description": "JWT login, registration, token management"},
+        {"name": "dashboard",              "description": "Role-aware KPI dashboards for all 5 roles"},
+        {"name": "personnel-health",       "description": "Crew health vitals and physiological records"},
+        {"name": "health-sensors",         "description": "IoT device management and sensor data ingestion"},
+        {"name": "medical-records",        "description": "Confidential ICAO Class 1/2/3 medical certificates (Medical Officer only)"},
+        {"name": "alertness-fatigue",      "description": "Real-time alertness scoring and fatigue trend analysis"},
+        {"name": "alcohol-substance",      "description": "BAC screening and substance testing (RCAA zero-tolerance)"},
+        {"name": "operational-readiness",  "description": "Fitness-for-duty assessment with AI-assisted scoring"},
+        {"name": "flight-duty",            "description": "Flight duty period lifecycle with pre-flight safety gates"},
+        {"name": "risk-prediction",        "description": "AI-powered fatigue risk prediction (decision-support only)"},
+        {"name": "frms-monitoring",        "description": "Fatigue Risk Management System (ICAO Doc 9966)"},
+        {"name": "safety-analytics",       "description": "Safety KPIs, incident reporting, and trend analysis"},
+        {"name": "compliance",             "description": "RCAA regulatory compliance checks and violation tracking"},
+        {"name": "notifications",          "description": "System alerts, warnings, and operational notifications"},
+        {"name": "reports",                "description": "PDF and data report generation"},
+        {"name": "user-management",        "description": "Administrator-level user CRUD and role assignment"},
+        {"name": "audit-logs",             "description": "Immutable audit trail for all system actions"},
+        {"name": "security-settings",      "description": "MFA, password management, and session security"},
+        {"name": "biometric-security",     "description": "WebAuthn / hardware security key authentication"},
+    ],
 )
 
-# Configure CORS to allow frontend connection
+# ── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://localhost:3001",
         "http://localhost:3002",
         "http://localhost:5173",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
         "http://127.0.0.1:3002",
         "http://127.0.0.1:5173",
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # Allow all HTTP methods
-    allow_headers=["*"],  # Allow all headers including Authorization
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(auth.router, prefix="/auth", tags=["authentication"])
-app.include_router(alcohol.router, prefix="/alcohol", tags=["alcohol-substance"])
-app.include_router(health.router, prefix="/health", tags=["health-records"])
-app.include_router(duty.router, prefix="/duty", tags=["duty-management"])
-app.include_router(assessment.router, prefix="/assessment", tags=["fitness-assessment"])
-
-# Create ALL database tables (including new ones)
+# ── Create ALL database tables ───────────────────────────────────────────────
 Base.metadata.create_all(bind=engine)
 
-def calculate_risk(sleep: float, duty: float, stress: float) -> str:
-    """
-    Calculate risk level based on sleep hours, duty hours, and stress level.
-    
-    Risk scoring formula:
-    - Sleep deficit: (8 - sleep) * 2
-    - Duty hours: duty * 1.5
-    - Stress: stress * 2
-    
-    Risk levels:
-    - LOW: score < 10
-    - MEDIUM: 10 <= score < 20
-    - HIGH: score >= 20
-    """
-    score = (8 - sleep) * 2 + duty * 1.5 + stress * 2
+# ── Register Routers ─────────────────────────────────────────────────────────
 
-    if score < 10:
-        return "LOW"
-    elif score < 20:
-        return "MEDIUM"
-    else:
-        return "HIGH"
+# Authentication
+app.include_router(auth.router,              prefix="/auth",             tags=["authentication"])
 
-@app.get("/")
+# Dashboard (role-aware)
+app.include_router(dashboard.router,         prefix="/dashboard",        tags=["dashboard"])
+
+# Personnel Health
+app.include_router(health.router,            prefix="/health",           tags=["personnel-health"])
+
+# Health Sensors (IoT)
+app.include_router(iot.router,               prefix="/iot",              tags=["health-sensors"])
+
+# Medical Records (confidential)
+app.include_router(medical_records.router,   prefix="/medical",          tags=["medical-records"])
+
+# Alertness & Fatigue
+app.include_router(alertness.router,         prefix="/alertness",        tags=["alertness-fatigue"])
+
+# Alcohol & Substance
+app.include_router(alcohol.router,           prefix="/alcohol",          tags=["alcohol-substance"])
+app.include_router(substance.router,         prefix="/substance",        tags=["alcohol-substance"])
+
+# Operational Readiness
+app.include_router(assessment.router,        prefix="/assessment",       tags=["operational-readiness"])
+
+# Flight Duty
+app.include_router(duty.router,              prefix="/duty",             tags=["flight-duty"])
+
+# Risk Prediction (AI-assisted)
+app.include_router(risk_prediction.router,   prefix="/risk",             tags=["risk-prediction"])
+
+# FRMS Monitoring
+app.include_router(frms.router,              prefix="/frms",             tags=["frms-monitoring"])
+
+# Safety Analytics
+app.include_router(safety_analytics.router,  prefix="/safety",           tags=["safety-analytics"])
+
+# Compliance
+app.include_router(compliance.router,        prefix="/compliance",       tags=["compliance"])
+
+# Notifications
+app.include_router(notifications.router,     prefix="/notifications",    tags=["notifications"])
+
+# Reports
+app.include_router(reports.router,           prefix="/reports",          tags=["reports"])
+
+# Personnel (listing helpers)
+app.include_router(personnel.router,         prefix="/personnel",        tags=["personnel-health"])
+
+# User Management (admin)
+app.include_router(user_management.router,   prefix="/users",            tags=["user-management"])
+
+# Audit Logs
+app.include_router(audit_logs.router,        prefix="/audit",            tags=["audit-logs"])
+
+# Security Settings
+app.include_router(security_settings.router, prefix="/security",         tags=["security-settings"])
+
+# Biometric (WebAuthn)
+app.include_router(webauthn.router,          prefix="/webauthn",         tags=["biometric-security"])
+
+# ── Root endpoints ───────────────────────────────────────────────────────────
+
+@app.get("/", tags=["root"])
 def read_root():
     return {
-        "message": "AeroGuard AI Backend is running!",
-        "version": "1.0.0",
-        "endpoints": {
-            "health": "/health",
-            "assess": "/assess/",
-            "pilots": "/pilots/",
-            "pilot_by_id": "/pilots/{pilot_id}"
-        }
+        "system": "AeroGuard AI — Aircrew Health & Alertness Monitoring System",
+        "version": "2.0.0",
+        "status": "operational",
+        "operator": "Akagera Aviation Ltd, Rwanda",
+        "regulatory_framework": "RCAA / ICAO Annex 1, 6, Doc 9966",
+        "ai_role": "Decision-support only. Human authority is preserved.",
+        "endpoints": "/docs",
+        "modules": [
+            "Dashboard", "Personnel Health", "Health Sensors", "Medical Records",
+            "Alertness & Fatigue", "Alcohol & Substance", "Operational Readiness",
+            "Flight Duty", "Risk Prediction", "FRMS Monitoring", "Safety Analytics",
+            "Compliance", "Notifications", "Reports", "User Management",
+            "Audit Logs", "Security Settings",
+        ],
     }
 
-@app.get("/health")
+
+@app.get("/health-check", tags=["root"])
 def health_check():
-    return {"status": "healthy", "service": "AeroGuard AI Backend"}
-
-@app.post("/assess/", response_model=AssessmentResponse, status_code=status.HTTP_201_CREATED)
-def assess_pilot(
-    assessment: PilotAssessment,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Assess a pilot's fatigue and risk level based on various metrics.
-    
-    SRS Requirement 1.3: All users with SUBMIT_ASSESSMENT permission can use this endpoint.
-    Creates a new pilot assessment record and calculates risk level.
-    """
-    # Check permission (SRS Requirement 1.3)
-    if not has_permission(current_user, SUBMIT_ASSESSMENT):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied. You do not have permission to submit assessments."
-        )
-    # Check if pilot with email or employee_id already exists
-    existing_pilot = db.query(Pilot).filter(
-        (Pilot.email == assessment.email) | 
-        (Pilot.employee_id == assessment.employee_id)
-    ).first()
-    
-    if existing_pilot:
-        # Update existing pilot record
-        existing_pilot.name = assessment.name
-        existing_pilot.sleep_hours = assessment.sleep_hours
-        existing_pilot.duty_hours = assessment.duty_hours
-        existing_pilot.stress_level = assessment.stress_level
-        existing_pilot.reaction_score = assessment.reaction_score
-        existing_pilot.alertness_score = assessment.alertness_score
-        existing_pilot.risk_level = calculate_risk(
-            assessment.sleep_hours,
-            assessment.duty_hours,
-            assessment.stress_level
-        )
-        
-        db.commit()
-        db.refresh(existing_pilot)
-        return existing_pilot
-    
-    # Create new pilot record
-    risk_level = calculate_risk(
-        assessment.sleep_hours,
-        assessment.duty_hours,
-        assessment.stress_level
-    )
-    
-    pilot = Pilot(
-        name=assessment.name,
-        email=assessment.email,
-        employee_id=assessment.employee_id,
-        role="pilot",
-        sleep_hours=assessment.sleep_hours,
-        duty_hours=assessment.duty_hours,
-        stress_level=assessment.stress_level,
-        reaction_score=assessment.reaction_score,
-        alertness_score=assessment.alertness_score,
-        risk_level=risk_level
-    )
-
-    db.add(pilot)
-    db.commit()
-    db.refresh(pilot)
-
-    return pilot
-
-@app.get("/pilots/", response_model=List[PilotResponse])
-def get_all_pilots(
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Get all pilots with pagination support.
-    
-    SRS Requirement 1.3: Restricted to users with VIEW_CREW_DATA or VIEW_ALL_PERSONNEL permission.
-    """
-    # Check permissions (SRS Requirement 1.3)
-    can_view_all = has_permission(current_user, VIEW_ALL_PERSONNEL)
-    can_view_crew = has_permission(current_user, VIEW_CREW_DATA)
-    
-    if not (can_view_all or can_view_crew):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied. You do not have permission to view pilot data."
-        )
-    
-    pilots = db.query(Pilot).offset(skip).limit(limit).all()
-    return pilots
-
-@app.get("/pilots/{pilot_id}", response_model=PilotResponse)
-def get_pilot_by_id(
-    pilot_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Get a specific pilot by ID.
-    
-    SRS Requirement 1.3: Restricted to users with VIEW_CREW_DATA or VIEW_ALL_PERSONNEL permission.
-    """
-    # Check permissions
-    can_view_all = has_permission(current_user, VIEW_ALL_PERSONNEL)
-    can_view_crew = has_permission(current_user, VIEW_CREW_DATA)
-    
-    if not (can_view_all or can_view_crew):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied. You do not have permission to view pilot data."
-        )
-    pilot = db.query(Pilot).filter(Pilot.id == pilot_id).first()
-    if not pilot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pilot with ID {pilot_id} not found"
-        )
-    return pilot
-
-@app.get("/pilots/employee/{employee_id}", response_model=PilotResponse)
-def get_pilot_by_employee_id(
-    employee_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Get a specific pilot by employee ID.
-    
-    SRS Requirement 1.3: Restricted to users with VIEW_CREW_DATA or VIEW_ALL_PERSONNEL permission.
-    """
-    # Check permissions
-    can_view_all = has_permission(current_user, VIEW_ALL_PERSONNEL)
-    can_view_crew = has_permission(current_user, VIEW_CREW_DATA)
-    
-    if not (can_view_all or can_view_crew):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied. You do not have permission to view pilot data."
-        )
-    pilot = db.query(Pilot).filter(Pilot.employee_id == employee_id).first()
-    if not pilot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pilot with employee ID {employee_id} not found"
-        )
-    return pilot
-
-@app.get("/pilots/risk/{risk_level}", response_model=List[PilotResponse])
-def get_pilots_by_risk(
-    risk_level: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_supervisor_or_above)
-):
-    """
-    Get all pilots with a specific risk level (LOW, MEDIUM, HIGH).
-    
-    SRS Requirement 1.3: Restricted to Supervisor role or above (supervisor, safety_officer, administrator).
-    """
-    if risk_level.upper() not in ["LOW", "MEDIUM", "HIGH"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Risk level must be LOW, MEDIUM, or HIGH"
-        )
-    
-    pilots = db.query(Pilot).filter(Pilot.risk_level == risk_level.upper()).all()
-    return pilots
+    return {
+        "status": "healthy",
+        "service": "AeroGuard AI Backend",
+        "version": "2.0.0",
+        "timestamp": __import__("datetime").datetime.utcnow().isoformat(),
+    }

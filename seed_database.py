@@ -8,7 +8,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from database import SessionLocal, engine
-from models import Base, Pilot, User, HealthRecord, AlcoholScreening, DutyPeriod, FitnessAssessment, AuditLog
+from models import Base, Pilot, User, HealthRecord, AlcoholScreening, DutyPeriod, FitnessAssessment, AuditLog, IoTDevice, MedicalRecord
 from auth.utils import hash_password
 from datetime import datetime, timedelta
 import random
@@ -16,11 +16,11 @@ import random
 Base.metadata.create_all(bind=engine)
 db = SessionLocal()
 
-print("🚀 AeroGuard AI — Database Seeder")
+print("[START] AeroGuard AI - Database Seeder")
 print("=" * 50)
 
 # ─── USERS ──────────────────────────────────────────────────────────────────
-print("\n📋 Seeding Users...")
+print("\n[USERS] Seeding Users...")
 
 USERS = [
     { "email": "jean@aeroguard.com",   "full_name": "Dr. Jean HABIMANA",   "employee_id": "MED-003", "role": "medical_officer",  "license": "MED-2024-001" },
@@ -39,7 +39,7 @@ created_users = []
 for u in USERS:
     existing = db.query(User).filter(User.email == u["email"]).first()
     if existing:
-        print(f"   ✓ Skipping {u['email']} (already exists)")
+        print(f"   [OK] Skipping {u['email']} (already exists)")
         created_users.append(existing)
         continue
     user = User(
@@ -55,12 +55,12 @@ for u in USERS:
     db.add(user)
     db.flush()
     created_users.append(user)
-    print(f"   ✅ Created: {u['full_name']} ({u['role']})")
+    print(f"   [DONE] Created: {u['full_name']} ({u['role']})")
 
 db.commit()
 
 # ─── PILOTS ─────────────────────────────────────────────────────────────────
-print("\n✈️  Seeding Pilots...")
+print("\n[PILOTS] Seeding Pilots...")
 
 PILOTS = [
     { "name": "Capt. John MUGABO",      "email": "john.pilot@aeroguard.com",    "employee_id": "AKG-P-001", "role": "Captain",       "sleep": 7.5, "duty": 4.2,  "stress": 3.0, "reaction": 88, "alertness": 85, "risk": "LOW" },
@@ -78,7 +78,7 @@ PILOTS = [
 for p in PILOTS:
     existing = db.query(Pilot).filter(Pilot.employee_id == p["employee_id"]).first()
     if existing:
-        print(f"   ✓ Skipping {p['name']} (already exists)")
+        print(f"   [OK] Skipping {p['name']} (already exists)")
         continue
     pilot = Pilot(
         name=p["name"], email=p["email"], employee_id=p["employee_id"], role=p["role"],
@@ -87,12 +87,12 @@ for p in PILOTS:
         created_at=datetime.utcnow(),
     )
     db.add(pilot)
-    print(f"   ✅ Created: {p['name']} (Risk: {p['risk']})")
+    print(f"   [DONE] Created: {p['name']} (Risk: {p['risk']})")
 
 db.commit()
 
 # ─── HEALTH RECORDS ─────────────────────────────────────────────────────────
-print("\n💊 Seeding Health Records...")
+print("\n[HEALTH] Seeding Health Records...")
 
 aviator_users = [u for u in created_users if u.role == "aviator"]
 if aviator_users:
@@ -123,12 +123,12 @@ if aviator_users:
             )
             db.add(rec)
     db.commit()
-    print(f"   ✅ Created health records for {len(aviator_users[:5])} aviators")
+    print(f"   [DONE] Created health records for {len(aviator_users[:5])} aviators")
 else:
     print("   ⚠️  No aviator users found, skipping health records")
 
 # ─── ALCOHOL SCREENINGS ─────────────────────────────────────────────────────
-print("\n🍺  Seeding Alcohol Screenings...")
+print("\n[ALCOHOL] Seeding Alcohol Screenings...")
 
 screening_data = [
     { "uid": 1, "bac": 0.000, "result": "cleared",  "type": "pre_flight",  "is_viol": False },
@@ -159,10 +159,10 @@ for s in screening_data:
         )
         db.add(rec)
 db.commit()
-print(f"   ✅ Created {len(screening_data)} alcohol screening records")
+print(f"   [DONE] Created {len(screening_data)} alcohol screening records")
 
 # ─── DUTY PERIODS ───────────────────────────────────────────────────────────
-print("\n⏱️  Seeding Duty Periods...")
+print("\n[DUTY] Seeding Duty Periods...")
 
 routes = [("KGL", "NBI", "RVA101"), ("KGL", "ADD", "RVA201"), ("KGL", "JRO", "RVA301"), ("KGL", "DAR", "RVA401")]
 for i, user in enumerate(created_users[:6]):
@@ -189,10 +189,10 @@ for i, user in enumerate(created_users[:6]):
         )
         db.add(duty)
 db.commit()
-print(f"   ✅ Created duty period records")
+print(f"   [DONE] Created duty period records")
 
 # ─── FITNESS ASSESSMENTS ────────────────────────────────────────────────────
-print("\n🏋️  Seeding Fitness Assessments...")
+print("\n[FITNESS] Seeding Fitness Assessments...")
 
 fitness_data = [
     { "score": 88, "health": 90, "fatigue": 85, "clearance": "cleared",     "risk": "LOW",    "level": "green" },
@@ -226,10 +226,10 @@ for i, fd in enumerate(fitness_data):
         )
         db.add(fa)
 db.commit()
-print(f"   ✅ Created fitness assessment records")
+print(f"   [DONE] Created fitness assessment records")
 
 # ─── AUDIT LOGS ─────────────────────────────────────────────────────────────
-print("\n📜  Seeding Audit Logs...")
+print("\n[AUDIT] Seeding Audit Logs...")
 audit_actions = [
     ("login", "user", "User logged in successfully"),
     ("view", "assessment", "Viewed fitness assessment"),
@@ -250,12 +250,183 @@ for user in created_users[:4]:
             )
             db.add(log)
 db.commit()
-print(f"   ✅ Created audit log entries")
+print(f"   [DONE] Created audit log entries")
+
+# ─── IOT DEVICES ────────────────────────────────────────────────────────────
+print("\n[IOT] Seeding IoT Devices...")
+iot_devices_data = [
+    {"name": "AeroGuard Mobile App", "type": "Smartphone Sensor Hub", "status": "online", "battery": 85, "device_id": "IOT-APP-001"},
+    {"name": "Xiaomi Smart Band 8", "type": "Basic Fitness Wearable", "status": "online", "battery": 92, "device_id": "IOT-BAND-001"},
+    {"name": "BACtrack C6", "type": "Consumer Breathalyzer", "status": "online", "battery": 64, "device_id": "IOT-BAC-001"},
+    {"name": "Fitbit Inspire 3", "type": "Sleep Tracker", "status": "online", "battery": 100, "device_id": "IOT-FIT-001"},
+    {"name": "Generic Bluetooth Webcam", "type": "Eye Tracking Sensor", "status": "warning", "battery": 100, "device_id": "IOT-CAM-001"},
+]
+for d in iot_devices_data:
+    if not db.query(IoTDevice).filter(IoTDevice.device_id == d["device_id"]).first():
+        iot = IoTDevice(
+            name=d["name"], type=d["type"], status=d["status"], battery=d["battery"], device_id=d["device_id"],
+            created_at=datetime.utcnow()
+        )
+        db.add(iot)
+db.commit()
+print(f"   [DONE] Created IoT Devices")
+
+# ─── MEDICAL RECORDS ────────────────────────────────────────────────────────
+print("\n[MEDICAL] Seeding RCAA Medical Records...")
+
+# Fetch seeded aviator users
+aviators_map = {u.email: u for u in created_users if u.role == "aviator"}
+
+if aviators_map:
+    # 1. Capt. John MUGABO (john@aeroguard.com) - Active Class 1
+    if "john@aeroguard.com" in aviators_map:
+        john = aviators_map["john@aeroguard.com"]
+        if not db.query(MedicalRecord).filter(MedicalRecord.user_id == john.id).first():
+            rec = MedicalRecord(
+                user_id=john.id,
+                record_date=datetime.utcnow() - timedelta(days=180),
+                examination_type="annual",
+                examining_physician="Dr. Jean HABIMANA",
+                medical_facility="Akagera Aviation Health Center",
+                medical_class="Class 1",
+                certificate_number="RCAA-MC-99211",
+                valid_from=datetime.utcnow() - timedelta(days=180),
+                valid_until=datetime.utcnow() + timedelta(days=185),
+                clearance_status="cleared",
+                vision_ok=True,
+                hearing_ok=True,
+                cardiovascular_ok=True,
+                neurological_ok=True,
+                respiratory_ok=True,
+                musculoskeletal_ok=True,
+                psychiatric_ok=True,
+                notes="Excellent physiological indices. Confirmed fit for Category I flight operations under RCAA regulations.",
+                created_by=john.id
+            )
+            db.add(rec)
+
+    # 2. F/O Sarah UWASE (sarah@aeroguard.com) - Expiring Soon Class 1 (10 days from now)
+    if "sarah@aeroguard.com" in aviators_map:
+        sarah = aviators_map["sarah@aeroguard.com"]
+        if not db.query(MedicalRecord).filter(MedicalRecord.user_id == sarah.id).first():
+            rec = MedicalRecord(
+                user_id=sarah.id,
+                record_date=datetime.utcnow() - timedelta(days=355),
+                examination_type="periodic",
+                examining_physician="Dr. Jean HABIMANA",
+                medical_facility="Akagera Aviation Health Center",
+                medical_class="Class 1",
+                certificate_number="RCAA-MC-44910",
+                valid_from=datetime.utcnow() - timedelta(days=355),
+                valid_until=datetime.utcnow() + timedelta(days=10),
+                clearance_status="cleared",
+                vision_ok=True,
+                hearing_ok=True,
+                cardiovascular_ok=True,
+                neurological_ok=True,
+                respiratory_ok=True,
+                musculoskeletal_ok=True,
+                psychiatric_ok=True,
+                limitations="Must wear corrective lenses for distant vision.",
+                conditions="Mild refractive error",
+                notes="Renewal physical scheduled. Re-evaluation of visual acuity required. Operational eligibility valid with corrective lenses.",
+                created_by=sarah.id
+            )
+            db.add(rec)
+
+    # 3. Capt. David NKUSI (david@aeroguard.com) - Grounded / Suspended
+    if "david@aeroguard.com" in aviators_map:
+        david = aviators_map["david@aeroguard.com"]
+        if not db.query(MedicalRecord).filter(MedicalRecord.user_id == david.id).first():
+            rec = MedicalRecord(
+                user_id=david.id,
+                record_date=datetime.utcnow() - timedelta(days=240),
+                examination_type="special",
+                examining_physician="Dr. Jean HABIMANA",
+                medical_facility="Akagera Aviation Health Center",
+                medical_class="Class 1",
+                certificate_number="RCAA-MC-11045",
+                valid_from=datetime.utcnow() - timedelta(days=240),
+                valid_until=datetime.utcnow() + timedelta(days=120),
+                clearance_status="suspended",
+                vision_ok=True,
+                hearing_ok=True,
+                cardiovascular_ok=False,  # BP failure
+                neurological_ok=True,
+                respiratory_ok=True,
+                musculoskeletal_ok=True,
+                psychiatric_ok=True,
+                limitations="Temporarily grounded. Unfit for flight operations.",
+                conditions="Grade 2 Hypertension, severe sleep debt fatigue",
+                medications="Lisinopril 10mg daily",
+                notes="Cardiovascular clinical screening flagged blood pressure of 165/102 mmHg. Severe fatigue-related indicators reported. Subject grounded until blood pressure stabilized and cardiologist clearance obtained.",
+                created_by=david.id
+            )
+            db.add(rec)
+
+    # 4. Capt. Alice UWIMANA (alice@aeroguard.com) - Active Class 1
+    if "alice@aeroguard.com" in aviators_map:
+        alice = aviators_map["alice@aeroguard.com"]
+        if not db.query(MedicalRecord).filter(MedicalRecord.user_id == alice.id).first():
+            rec = MedicalRecord(
+                user_id=alice.id,
+                record_date=datetime.utcnow() - timedelta(days=90),
+                examination_type="annual",
+                examining_physician="Dr. Jean HABIMANA",
+                medical_facility="Akagera Aviation Health Center",
+                medical_class="Class 1",
+                certificate_number="RCAA-MC-88123",
+                valid_from=datetime.utcnow() - timedelta(days=90),
+                valid_until=datetime.utcnow() + timedelta(days=275),
+                clearance_status="cleared",
+                vision_ok=True,
+                hearing_ok=True,
+                cardiovascular_ok=True,
+                neurological_ok=True,
+                respiratory_ok=True,
+                musculoskeletal_ok=True,
+                psychiatric_ok=True,
+                notes="Physical indices optimal. Fit for multi-pilot transport aircraft duty.",
+                created_by=alice.id
+            )
+            db.add(rec)
+
+    # 5. Capt. Emmanuel HABIMANA (emmanuel@aeroguard.com) - Expired
+    if "emmanuel@aeroguard.com" in aviators_map:
+        emmanuel = aviators_map["emmanuel@aeroguard.com"]
+        if not db.query(MedicalRecord).filter(MedicalRecord.user_id == emmanuel.id).first():
+            rec = MedicalRecord(
+                user_id=emmanuel.id,
+                record_date=datetime.utcnow() - timedelta(days=395),
+                examination_type="annual",
+                examining_physician="Dr. Jean HABIMANA",
+                medical_facility="Akagera Aviation Health Center",
+                medical_class="Class 1",
+                certificate_number="RCAA-MC-33100",
+                valid_from=datetime.utcnow() - timedelta(days=395),
+                valid_until=datetime.utcnow() - timedelta(days=30),
+                clearance_status="pending",  # shows expired state due to valid_until in the past
+                vision_ok=True,
+                hearing_ok=True,
+                cardiovascular_ok=True,
+                neurological_ok=True,
+                respiratory_ok=True,
+                musculoskeletal_ok=True,
+                psychiatric_ok=True,
+                limitations="Grounded due to certificate expiry.",
+                notes="Annual Class 1 medical expired on calendar limits. Awaiting periodic renewal physical.",
+                created_by=emmanuel.id
+            )
+            db.add(rec)
+
+    db.commit()
+    print(f"   [DONE] Created RCAA Medical Records")
 
 db.close()
 print("\n" + "=" * 50)
-print("✅ Database seeding complete!")
-print("   • Users: Login with Password123!")
-print("   • Pilots: 10 crew members with varied risk levels")
-print("   • Health, Alcohol, Duty, Fitness records seeded")
+print("DATABASE SEEDING COMPLETE!")
+print("   * Users: Login with Password123!")
+print("   * Pilots: 10 crew members with varied risk levels")
+print("   * Health, Alcohol, Duty, Fitness, Medical records seeded")
 print("=" * 50)
+

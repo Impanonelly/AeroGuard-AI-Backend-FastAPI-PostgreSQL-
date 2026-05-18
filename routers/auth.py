@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List
 from sqlalchemy.orm import Session
 from datetime import datetime
 from database import get_db
@@ -190,4 +191,11 @@ def logout_user(current_user: User = Depends(get_current_user)):
     This is a placeholder for now.
     """
     return {"message": "Successfully logged out", "detail": "Please discard your tokens"}
+
+@router.get("/users", response_model=List[UserResponse])
+def get_all_users(db: Session = Depends(get_current_user), db_session: Session = Depends(get_db)):
+    """
+    Get all users (restricted to authenticated personnel).
+    """
+    return db_session.query(User).all()
 

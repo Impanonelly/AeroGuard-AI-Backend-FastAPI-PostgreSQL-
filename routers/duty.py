@@ -46,6 +46,8 @@ class DutyResponse(BaseModel):
     flight_hours: Optional[float]
     alcohol_screening_completed: bool
     alcohol_screening_passed: bool
+    substance_screening_completed: bool
+    substance_screening_passed: bool
     fitness_assessment_completed: bool
     fitness_assessment_passed: bool
     notes: Optional[str]
@@ -91,6 +93,21 @@ def _check_fitness_clearance(user_id: int, db: Session) -> bool:
     )
     return assessment is not None
 
+def _check_substance_clearance(user_id: int, db: Session) -> bool:
+    """Latest substance screening must be 'cleared' (not flagged)."""
+    from models import SubstanceScreening
+    screening = (
+        db.query(SubstanceScreening)
+        .filter(SubstanceScreening.user_id == user_id)
+        .order_by(desc(SubstanceScreening.screening_date))
+        .first()
+    )
+    # Unlike alcohol, substance screenings might be less frequent (e.g. monthly)
+    # But for flight duty, we ensure the status is 'cleared'
+    if not screening:
+        return False
+    return screening.result_status == "cleared"
+
 # ──────────────────────────────────────────────
 # ENDPOINTS
 # ──────────────────────────────────────────────
@@ -126,12 +143,24 @@ def start_duty(
     # Check alcohol clearance
     alcohol_ok = _check_alcohol_clearance(data.user_id, db)
     fitness_ok = _check_fitness_clearance(data.user_id, db)
+    substance_ok = _check_substance_clearance(data.user_id, db)
 
-    if data.duty_type == "flight" and not alcohol_ok:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Cannot start flight duty: No valid pre-flight alcohol screening (cleared, within 12 hours).",
-        )
+    if data.duty_type == "flight":
+        if not alcohol_ok:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot start flight duty: No valid pre-flight alcohol screening (cleared, within 12 hours).",
+            )
+        if not substance_ok:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot start flight duty: Substance status is not CLEARED. Laboratory confirmation or screening required.",
+            )
+        if not fitness_ok:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot start flight duty: No valid fitness assessment (cleared, within 12 hours).",
+            )
 
     duty = DutyPeriod(
         user_id=data.user_id,
@@ -145,6 +174,8 @@ def start_duty(
         arrival_airport=data.arrival_airport,
         alcohol_screening_completed=alcohol_ok,
         alcohol_screening_passed=alcohol_ok,
+        substance_screening_completed=substance_ok,
+        substance_screening_passed=substance_ok,
         fitness_assessment_completed=fitness_ok,
         fitness_assessment_passed=fitness_ok,
         notes=data.notes,
