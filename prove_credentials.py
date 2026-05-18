@@ -27,18 +27,9 @@ def test_login(email, password):
                 print(f"FAILED: {email} login failed with status {status}")
                 print(f"Response: {body}")
                 return False
-    except urllib.error.HTTPError as e:
-        print(f"FAILED: {email} login failed with status {e.code}")
-        print(f"Response: {e.read().decode('utf-8')}")
-        return False
     except Exception as e:
-        print(f"ERROR: {str(e)}")
+        print(f"ERROR: Could not connect to backend. {e}")
         return False
 
 if __name__ == "__main__":
-    # Test a few demo users
-    test_login("robert@aeroguard.com", "Password123!")
-    print("-" * 50)
-    test_login("mary@aeroguard.com", "Password123!")
-    print("-" * 50)
-    test_login("testpilot@aeroguard.com", "Password123!")
+    test_login("admin@aeroguard.ai", "admin123")
