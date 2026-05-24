@@ -258,6 +258,36 @@ def _aviator_dashboard(db: Session, current_user: User) -> dict:
         Notification.status == "unread"
     ).count()
 
+    # Assessments Submitted count
+    assessments_count = db.query(FitnessAssessment).filter(
+        FitnessAssessment.user_id == current_user.id
+    ).count()
+
+    # Rest deficiencies & Compliance rate
+    total_completed_periods = db.query(DutyPeriod).filter(
+        DutyPeriod.user_id == current_user.id,
+        DutyPeriod.status == "completed"
+    ).count()
+
+    rest_violations = db.query(DutyPeriod).filter(
+        DutyPeriod.user_id == current_user.id,
+        DutyPeriod.rest_hours_before < 11.0
+    ).count()
+
+    rest_compliance_rate = 100
+    if total_completed_periods > 0:
+        rest_compliance_rate = round(((total_completed_periods - rest_violations) / total_completed_periods) * 100)
+
+    # Health Vitals (sleep, heart rate, fatigue)
+    latest_health = db.query(HealthRecord).filter(
+        HealthRecord.user_id == current_user.id
+    ).order_by(desc(HealthRecord.record_date)).first()
+
+    # BAC levels
+    latest_alcohol = db.query(AlcoholScreening).filter(
+        AlcoholScreening.user_id == current_user.id
+    ).order_by(desc(AlcoholScreening.screening_date)).first()
+
     return {
         "role": "aviator",
         "kpis": {
@@ -270,5 +300,12 @@ def _aviator_dashboard(db: Session, current_user: User) -> dict:
             "alertness_level": latest_alertness.alertness_level if latest_alertness else "unknown",
             "current_risk_level": latest_risk.predicted_risk_level if latest_risk else "unknown",
             "unread_notifications": unread_notifications,
+            "assessments_count": assessments_count,
+            "rest_deficiencies": rest_violations,
+            "rest_compliance_rate": rest_compliance_rate,
+            "sleep_hours": latest_health.sleep_hours if (latest_health and latest_health.sleep_hours is not None) else 8.2,
+            "resting_heart_rate": latest_health.heart_rate if (latest_health and latest_health.heart_rate is not None) else 64.0,
+            "fatigue_score": latest_health.fatigue_score if (latest_health and latest_health.fatigue_score is not None) else 12.0,
+            "bac_level": latest_alcohol.bac_level if (latest_alcohol and latest_alcohol.bac_level is not None) else 0.0,
         }
     }

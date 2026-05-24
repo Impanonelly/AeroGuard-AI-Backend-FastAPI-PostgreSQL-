@@ -16,6 +16,7 @@ router = APIRouter()
 
 @router.get("/compliance/pdf", response_class=Response)
 def download_compliance_pdf(
+    report_type: str = "compliance",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -58,10 +59,10 @@ def download_compliance_pdf(
         )
 
     # 3. Generate PDF
-    pdf_content = generate_compliance_report(pilots, current_user.full_name)
+    pdf_content = generate_compliance_report(pilots, current_user.full_name, report_type)
     
     # 4. Return as a downloadable attachment
-    filename = f"AeroGuard_Compliance_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    filename = f"AeroGuard_{report_type.capitalize()}_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
     
     return Response(
         content=pdf_content,
