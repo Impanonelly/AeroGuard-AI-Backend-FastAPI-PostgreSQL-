@@ -245,14 +245,6 @@ def _aviator_dashboard(db: Session, current_user: User) -> dict:
         DutyPeriod.status == "completed"
     ).scalar() or 0.0
 
-    latest_alertness = db.query(AlertnessReading).filter(
-        AlertnessReading.user_id == current_user.id
-    ).order_by(desc(AlertnessReading.reading_timestamp)).first()
-
-    latest_risk = db.query(RiskPredictionLog).filter(
-        RiskPredictionLog.user_id == current_user.id
-    ).order_by(desc(RiskPredictionLog.prediction_timestamp)).first()
-
     unread_notifications = db.query(Notification).filter(
         Notification.user_id == current_user.id,
         Notification.status == "unread"
@@ -278,12 +270,7 @@ def _aviator_dashboard(db: Session, current_user: User) -> dict:
     if total_completed_periods > 0:
         rest_compliance_rate = round(((total_completed_periods - rest_violations) / total_completed_periods) * 100)
 
-    # Health Vitals (sleep, heart rate, fatigue)
-    latest_health = db.query(HealthRecord).filter(
-        HealthRecord.user_id == current_user.id
-    ).order_by(desc(HealthRecord.record_date)).first()
-
-    # BAC levels
+    # BAC levels (simulated pre-flight screenings)
     latest_alcohol = db.query(AlcoholScreening).filter(
         AlcoholScreening.user_id == current_user.id
     ).order_by(desc(AlcoholScreening.screening_date)).first()
@@ -296,16 +283,18 @@ def _aviator_dashboard(db: Session, current_user: User) -> dict:
             "overall_score": latest_assessment.overall_score if latest_assessment else None,
             "active_duty": bool(active_duty),
             "duty_hours_7d": round(duty_hours_7d, 1),
-            "current_alertness_score": latest_alertness.alertness_score if latest_alertness else None,
-            "alertness_level": latest_alertness.alertness_level if latest_alertness else "unknown",
-            "current_risk_level": latest_risk.predicted_risk_level if latest_risk else "unknown",
+            "current_alertness_score": latest_assessment.fatigue_score if latest_assessment else 90.0,
+            "alertness_level": latest_assessment.alertness_level if latest_assessment else "high",
+            "current_risk_level": latest_assessment.risk_level if latest_assessment else "LOW",
             "unread_notifications": unread_notifications,
             "assessments_count": assessments_count,
             "rest_deficiencies": rest_violations,
             "rest_compliance_rate": rest_compliance_rate,
-            "sleep_hours": latest_health.sleep_hours if (latest_health and latest_health.sleep_hours is not None) else 8.2,
-            "resting_heart_rate": latest_health.heart_rate if (latest_health and latest_health.heart_rate is not None) else 64.0,
-            "fatigue_score": latest_health.fatigue_score if (latest_health and latest_health.fatigue_score is not None) else 12.0,
+            "sleep_hours": latest_assessment.sleep_hours_last_night if (latest_assessment and latest_assessment.sleep_hours_last_night is not None) else 8.2,
+            "stress_level": latest_assessment.stress_level if (latest_assessment and latest_assessment.stress_level is not None) else 3.0,
+            "fatigue_level": latest_assessment.fatigue_level if (latest_assessment and latest_assessment.fatigue_level is not None) else 2.0,
+            "workload_perception": latest_assessment.workload_perception if (latest_assessment and latest_assessment.workload_perception is not None) else 3.0,
+            "duty_hours_today": latest_assessment.duty_hours_today if (latest_assessment and latest_assessment.duty_hours_today is not None) else 4.0,
             "bac_level": latest_alcohol.bac_level if (latest_alcohol and latest_alcohol.bac_level is not None) else 0.0,
         }
     }

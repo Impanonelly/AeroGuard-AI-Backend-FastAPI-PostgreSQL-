@@ -134,8 +134,8 @@ def get_medical_records(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get medical records for a user. Medical Officer / Administrator only."""
-    if not has_permission(current_user, VIEW_MEDICAL_RECORDS):
+    """Get medical records for a user. Medical Officer / Administrator / Owner user."""
+    if not has_permission(current_user, VIEW_MEDICAL_RECORDS) and current_user.id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. Medical records are confidential.")
 
     records = (

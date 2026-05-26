@@ -4,12 +4,8 @@ from database import engine
 from models import Base
 
 # ── Core routers (existing) ──────────────────────────────────────────────────
-from routers import auth
+from routers import auth, dashboard
 from routers import alcohol, health, duty, assessment, reports, notifications, substance, personnel, webauthn
-
-# ── Expanded / new routers ───────────────────────────────────────────────────
-from routers import iot
-from routers import dashboard
 from routers import medical_records
 from routers import alertness
 from routers import risk_prediction
@@ -46,7 +42,6 @@ app = FastAPI(
         {"name": "authentication",         "description": "JWT login, registration, token management"},
         {"name": "dashboard",              "description": "Role-aware KPI dashboards for all 5 roles"},
         {"name": "personnel-health",       "description": "Crew health vitals and physiological records"},
-        {"name": "health-sensors",         "description": "IoT device management and sensor data ingestion"},
         {"name": "medical-records",        "description": "Confidential ICAO Class 1/2/3 medical certificates (Medical Officer only)"},
         {"name": "alertness-fatigue",      "description": "Real-time alertness scoring and fatigue trend analysis"},
         {"name": "alcohol-substance",      "description": "BAC screening and substance testing (RCAA zero-tolerance)"},
@@ -96,9 +91,6 @@ app.include_router(dashboard.router,         prefix="/dashboard",        tags=["
 
 # Personnel Health
 app.include_router(health.router,            prefix="/health",           tags=["personnel-health"])
-
-# Health Sensors (IoT)
-app.include_router(iot.router,               prefix="/iot",              tags=["health-sensors"])
 
 # Medical Records (confidential)
 app.include_router(medical_records.router,   prefix="/medical",          tags=["medical-records"])
@@ -162,7 +154,7 @@ def read_root():
         "ai_role": "Decision-support only. Human authority is preserved.",
         "endpoints": "/docs",
         "modules": [
-            "Dashboard", "Personnel Health", "Health Sensors", "Medical Records",
+            "Dashboard", "Personnel Health", "Medical Records",
             "Alertness & Fatigue", "Alcohol & Substance", "Operational Readiness",
             "Flight Duty", "Risk Prediction", "FRMS Monitoring", "Safety Analytics",
             "Compliance", "Notifications", "Reports", "User Management",

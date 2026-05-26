@@ -8,7 +8,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from database import SessionLocal, engine
-from models import Base, Pilot, User, HealthRecord, AlcoholScreening, DutyPeriod, FitnessAssessment, AuditLog, IoTDevice, MedicalRecord
+from models import Base, Pilot, User, HealthRecord, AlcoholScreening, DutyPeriod, FitnessAssessment, AuditLog, MedicalRecord
 from auth.utils import hash_password
 from datetime import datetime, timedelta
 import random
@@ -207,6 +207,16 @@ for i, fd in enumerate(fitness_data):
         break
     user = created_users[i]
     if not db.query(FitnessAssessment).filter(FitnessAssessment.user_id == user.id).first():
+        sleep_hours = random.uniform(6.5, 9.0) if fd["clearance"] == "cleared" else (
+            random.uniform(5.0, 6.5) if fd["clearance"] == "conditional" else random.uniform(2.0, 4.5)
+        )
+        fatigue_level = random.uniform(1.0, 3.0) if fd["clearance"] == "cleared" else (
+            random.uniform(3.5, 6.0) if fd["clearance"] == "conditional" else random.uniform(7.0, 9.5)
+        )
+        stress_level = random.uniform(1.0, 3.5) if fd["clearance"] == "cleared" else (
+            random.uniform(4.0, 6.0) if fd["clearance"] == "conditional" else random.uniform(7.0, 9.5)
+        )
+        
         fa = FitnessAssessment(
             user_id=user.id,
             assessment_date=datetime.utcnow(),
@@ -223,6 +233,21 @@ for i, fd in enumerate(fitness_data):
             assessed_by="AeroGuard AI System v1.0",
             valid_until=datetime.utcnow() + timedelta(hours=12),
             ai_confidence_score=random.uniform(85, 99),
+            
+            # Seed the manual readiness fields
+            sleep_hours_last_night=round(sleep_hours, 1),
+            sleep_quality_rating=round(random.uniform(5.0, 10.0), 1),
+            stress_level=round(stress_level, 1),
+            fatigue_level=round(fatigue_level, 1),
+            workload_perception=round(random.uniform(2.0, 6.0), 1),
+            duty_hours_today=round(random.uniform(2.0, 8.0), 1),
+            physical_condition="excellent" if fd["clearance"] == "cleared" else ("good" if fd["clearance"] == "conditional" else "poor"),
+            illness_symptoms="none" if fd["clearance"] != "grounded" else "sluggishness, headache",
+            feeling_ready="yes" if fd["clearance"] == "cleared" else ("uncertain" if fd["clearance"] == "conditional" else "no"),
+            
+            # Anomaly flags
+            response_anomaly_detected=False,
+            manual_review_required=(fd["clearance"] == "conditional")
         )
         db.add(fa)
 db.commit()
@@ -253,23 +278,7 @@ db.commit()
 print(f"   [DONE] Created audit log entries")
 
 # ─── IOT DEVICES ────────────────────────────────────────────────────────────
-print("\n[IOT] Seeding IoT Devices...")
-iot_devices_data = [
-    {"name": "AeroGuard Mobile App", "type": "Smartphone Sensor Hub", "status": "online", "battery": 85, "device_id": "IOT-APP-001"},
-    {"name": "Xiaomi Smart Band 8", "type": "Basic Fitness Wearable", "status": "online", "battery": 92, "device_id": "IOT-BAND-001"},
-    {"name": "BACtrack C6", "type": "Consumer Breathalyzer", "status": "online", "battery": 64, "device_id": "IOT-BAC-001"},
-    {"name": "Fitbit Inspire 3", "type": "Sleep Tracker", "status": "online", "battery": 100, "device_id": "IOT-FIT-001"},
-    {"name": "Generic Bluetooth Webcam", "type": "Eye Tracking Sensor", "status": "warning", "battery": 100, "device_id": "IOT-CAM-001"},
-]
-for d in iot_devices_data:
-    if not db.query(IoTDevice).filter(IoTDevice.device_id == d["device_id"]).first():
-        iot = IoTDevice(
-            name=d["name"], type=d["type"], status=d["status"], battery=d["battery"], device_id=d["device_id"],
-            created_at=datetime.utcnow()
-        )
-        db.add(iot)
-db.commit()
-print(f"   [DONE] Created IoT Devices")
+# IoT Devices Seeding deprecated in fully software-based aircrew readiness system.
 
 # ─── MEDICAL RECORDS ────────────────────────────────────────────────────────
 print("\n[MEDICAL] Seeding RCAA Medical Records...")

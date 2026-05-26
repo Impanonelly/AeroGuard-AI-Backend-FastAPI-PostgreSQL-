@@ -68,6 +68,7 @@ class User(Base):
     substance_screenings = relationship("SubstanceScreening", back_populates="user", cascade="all, delete-orphan", foreign_keys="SubstanceScreening.user_id")
     duty_periods = relationship("DutyPeriod", back_populates="user", cascade="all, delete-orphan", foreign_keys="DutyPeriod.user_id")
     fitness_assessments = relationship("FitnessAssessment", back_populates="user", cascade="all, delete-orphan", foreign_keys="FitnessAssessment.user_id")
+    readiness_assessments = relationship("ReadinessAssessment", back_populates="user", cascade="all, delete-orphan", foreign_keys="ReadinessAssessment.user_id")
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan", foreign_keys="AuditLog.user_id")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan", foreign_keys="Notification.user_id")
     medical_records = relationship("MedicalRecord", back_populates="user", cascade="all, delete-orphan", foreign_keys="MedicalRecord.user_id")
@@ -143,7 +144,6 @@ class AlcoholScreening(Base):
     screening_type = Column(String, default="pre_flight")  # pre_flight, post_flight, random
     bac_level = Column(Float, nullable=False)              # Blood Alcohol Content %
     test_method = Column(String, default="breathalyzer")   # breathalyzer, blood, urine
-    device_id = Column(String, nullable=True)
 
     # Result
     result_status = Column(String, nullable=False)         # cleared, warning, grounded
@@ -251,6 +251,26 @@ class FitnessAssessment(Base):
 
     assessment_date = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+    # Manual Inputs - Sleep & Rest
+    sleep_hours_last_night = Column(Float, nullable=True)     # hours (0-24)
+    sleep_quality_rating = Column(Float, nullable=True)       # 1-10 scale
+
+    # Manual Inputs - Stress, Fatigue, Workload
+    stress_level = Column(Float, nullable=True)               # 1-10 scale
+    fatigue_level = Column(Float, nullable=True)              # 1-10 scale
+    workload_perception = Column(Float, nullable=True)        # 1-10 scale (perceived workload)
+
+    # Manual Inputs - Duty & Work
+    duty_hours_today = Column(Float, nullable=True)           # hours of duty scheduled
+
+    # Manual Inputs - Physical Condition
+    physical_condition = Column(String, nullable=True)        # excellent, good, fair, poor
+    illness_symptoms = Column(Text, nullable=True)             # e.g., sluggishness, micro-sleeps, etc.
+    medication_taken = Column(Text, nullable=True)             # any medications taken
+
+    # Manual Inputs - Self-Assessment
+    feeling_ready = Column(String, nullable=True)             # yes, no, uncertain
+
     # Composite scores (0-100)
     overall_score = Column(Float, nullable=False)
     health_score = Column(Float, nullable=True)
@@ -268,6 +288,14 @@ class FitnessAssessment(Base):
     clearance_status = Column(String, default="grounded")  # cleared, conditional, grounded
     clearance_level = Column(String, default="red")        # green, yellow, red
     restrictions = Column(Text, nullable=True)             # JSON array as string
+
+    # Response Validation & Anomaly Detection
+    response_anomaly_detected = Column(Boolean, default=False)
+    anomaly_type = Column(String, nullable=True)               # inconsistency, repeated_pattern_anomaly, etc.
+    anomaly_description = Column(Text, nullable=True)          # explanation
+    manual_review_required = Column(Boolean, default=False)    # flag for supervisor review
+    historical_deviation_score = Column(Float, nullable=True)  # deviation from user's pattern (0-100)
+    similar_past_responses = Column(Integer, nullable=True)    # count of identical/very similar responses
 
     # Assessment metadata
     assessed_by = Column(String, nullable=True)
@@ -330,22 +358,72 @@ class AIModel(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
 # ============================================================================
-# IOT DEVICE TRACKING
+# READINESS ASSESSMENT MODEL (Manual Web-Based Entry)
 # ============================================================================
 
-class IoTDevice(Base):
-    __tablename__ = "iot_devices"
+class ReadinessAssessment(Base):
+    __tablename__ = "readiness_assessments"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    type = Column(String, nullable=False) # Smartwatch, EEG Headset, etc.
-    status = Column(String, default="active") # active, inactive, charging
-    battery = Column(Integer, default=100)
-    last_sync = Column(DateTime, default=datetime.utcnow)
-    device_id = Column(String, unique=True, nullable=False)
-    
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    assessment_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    # Manual Input - Sleep & Rest
+    sleep_hours_last_night = Column(Float, nullable=False)     # hours (0-24)
+    sleep_quality_rating = Column(Float, nullable=False)       # 1-10 scale
+    sleep_interruptions = Column(Integer, nullable=True)       # number of times woken
+
+    # Manual Input - Stress & Fatigue
+    stress_level = Column(Float, nullable=False)               # 1-10 scale
+    fatigue_level = Column(Float, nullable=False)              # 1-10 scale
+    workload_perception = Column(Float, nullable=False)        # 1-10 scale (perceived workload)
+
+    # Manual Input - Duty & Work
+    duty_hours_today = Column(Float, nullable=False)           # hours of duty scheduled
+    flight_hours_today = Column(Float, nullable=True)          # flight hours if applicable
+    nights_worked_consecutively = Column(Integer, nullable=True)  # consecutive night shifts
+
+    # Manual Input - Physical Condition
+    physical_condition = Column(String, nullable=False)        # excellent, good, fair, poor
+    illness_symptoms = Column(Text, nullable=True)             # e.g., "headache", "nausea", "none"
+    medication_taken = Column(Text, nullable=True)             # any medications taken
+
+    # Manual Input - Self-Assessment
+    feeling_ready = Column(String, nullable=False)             # yes, no, uncertain
+    concerns_or_notes = Column(Text, nullable=True)            # free-form concerns
+
+    # AI Calculated Scores
+    overall_readiness_score = Column(Float, nullable=True)     # 0-100 (calculated by AI)
+    fatigue_score = Column(Float, nullable=True)               # 0-100 (calculated)
+    readiness_classification = Column(String, nullable=True)   # Fit for Duty, Limited Duty, Not Fit for Duty
+    risk_level = Column(String, nullable=True)                 # LOW, MEDIUM, HIGH, CRITICAL
+
+    # Response Validation & Anomaly Detection
+    response_anomaly_detected = Column(Boolean, default=False)
+    anomaly_type = Column(String, nullable=True)               # inconsistency, pattern_anomaly, duty_mismatch, etc.
+    anomaly_description = Column(Text, nullable=True)          # human-readable explanation
+    manual_review_required = Column(Boolean, default=False)    # flag for supervisor review
+
+    # Historical Comparison (for pattern detection)
+    historical_deviation_score = Column(Float, nullable=True)  # deviation from user's pattern (0-100)
+    similar_past_responses = Column(Integer, nullable=True)    # count of identical/very similar responses
+
+    # Supervisor Review & Override
+    supervisor_reviewed = Column(Boolean, default=False)
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    supervisor_notes = Column(Text, nullable=True)
+    clearance_status = Column(String, nullable=True)           # cleared, conditional, grounded
+
+    # Audit
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="readiness_assessments", foreign_keys=[user_id])
+
 
 # ============================================================================
 # AUDIT LOG MODEL
@@ -458,31 +536,34 @@ class AlertnessReading(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
 
     reading_timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-    source = Column(String, default="manual")                # manual, iot_smartwatch, iot_eeg, iot_camera
+    source = Column(String, default="manual_assessment")     # manual_assessment only
 
-    # Alertness metrics
-    alertness_score = Column(Float, nullable=False)          # 0-100
-    fatigue_index = Column(Float, nullable=True)             # 0-100 (higher = more fatigued)
-    reaction_time_ms = Column(Float, nullable=True)          # milliseconds
-    blink_rate = Column(Float, nullable=True)                # blinks per minute
-    eye_closure_duration = Column(Float, nullable=True)      # PERCLOS % (% time eyes >80% closed)
+    # Manual assessment inputs
+    sleep_hours = Column(Float, nullable=True)              # hours of sleep last night
+    stress_level = Column(Float, nullable=True)             # 1-10 scale
+    fatigue_level = Column(Float, nullable=True)            # 1-10 scale
+    workload_level = Column(Float, nullable=True)           # 1-10 scale (perceived)
+    duty_hours_today = Column(Float, nullable=True)         # hours of duty today
+
+    # Alertness metrics (calculated from manual inputs)
+    alertness_score = Column(Float, nullable=False)         # 0-100 (calculated)
+    fatigue_index = Column(Float, nullable=True)            # 0-100 (higher = more fatigued)
+    reaction_time_ms = Column(Float, nullable=True)         # estimated, milliseconds
 
     # Cognitive
-    cognitive_load = Column(Float, nullable=True)            # 0-100
-    attention_score = Column(Float, nullable=True)           # 0-100
-
-    # Physiological from IoT
-    heart_rate = Column(Float, nullable=True)                # bpm
-    hrv_score = Column(Float, nullable=True)                 # Heart Rate Variability
-    eeg_theta_power = Column(Float, nullable=True)           # EEG theta band (fatigue marker)
-    eeg_alpha_power = Column(Float, nullable=True)           # EEG alpha band
+    cognitive_load = Column(Float, nullable=True)           # 0-100
+    attention_score = Column(Float, nullable=True)          # 0-100
 
     # Classification
-    alertness_level = Column(String, default="moderate")     # high, moderate, low, critical
-    risk_flag = Column(Boolean, default=False)               # True if unsafe to fly
+    alertness_level = Column(String, default="moderate")    # high, moderate, low, critical
+    risk_flag = Column(Boolean, default=False)              # True if unsafe to fly
 
-    # Device
-    device_id = Column(String, nullable=True)
+    # Consistency validation
+    response_anomaly_detected = Column(Boolean, default=False)
+    anomaly_notes = Column(Text, nullable=True)             # Description of detected anomaly
+    manual_review_required = Column(Boolean, default=False)
+
+    notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
