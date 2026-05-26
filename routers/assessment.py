@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from typing import List, Optional
@@ -388,4 +388,93 @@ def get_dashboard_stats(
         "conditional": conditional,
         "grounded": grounded,
         "compliance_rate": round((cleared / len(recent) * 100) if recent else 100.0, 1),
+    }
+
+
+@router.get("/{assessment_id}/certificate", response_class=Response)
+def get_readiness_certificate(
+    assessment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate and download an official RCAA Operational Readiness Certificate
+    with a verification QR code for a cleared assessment.
+    """
+    from services.pdf_generator import generate_readiness_certificate
+
+    assessment = db.query(FitnessAssessment).filter(FitnessAssessment.id == assessment_id).first()
+    if not assessment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment record not found.")
+
+    # Only the pilot themselves, or a supervisor/admin/safety officer can access the certificate
+    if current_user.id != assessment.user_id and not has_permission(current_user, VIEW_CREW_DATA):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+
+    # Generating certificate is only valid for cleared (or conditionally cleared) status
+    if assessment.clearance_status not in ["cleared", "conditional"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot generate certificate for a grounded pilot (Clearance: {assessment.clearance_status.upper()})."
+        )
+
+    verify_url = f"http://localhost:3000/verify/{assessment_id}"
+    pdf_content = generate_readiness_certificate(assessment, verify_url)
+
+    # Log to audit trail
+    db.add(AuditLog(
+        user_id=current_user.id,
+        action_type="readiness_certificate_downloaded",
+        resource_type="readiness_assessment",
+        resource_id=str(assessment_id),
+        action_details=f"Readiness certificate downloaded for user {assessment.user_id}",
+        module="Operational Readiness",
+        success=True,
+    ))
+    db.commit()
+
+    filename = f"AeroGuard_Clearance_Certificate_{assessment_id}.pdf"
+    return Response(
+        content=pdf_content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+    )
+
+
+@router.get("/verify/{assessment_id}")
+def verify_assessment_public(
+    assessment_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Public endpoint to verify the operational readiness status of a pilot's certificate.
+    This does not expose private sensitive medical metrics, only duty clearance status.
+    """
+    assessment = db.query(FitnessAssessment).filter(FitnessAssessment.id == assessment_id).first()
+    if not assessment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Readiness certificate record not found.")
+
+    pilot = assessment.user
+    if not pilot:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Associated crew member not found.")
+
+    # Check if certificate is expired (validity period has passed)
+    is_expired = False
+    if assessment.valid_until and datetime.utcnow() > assessment.valid_until:
+        is_expired = True
+
+    return {
+        "certificate_id": assessment.id,
+        "pilot_name": pilot.full_name,
+        "employee_id": pilot.employee_id,
+        "role": pilot.role,
+        "flight_number": assessment.flight_number,
+        "clearance_status": "expired" if is_expired else assessment.clearance_status,
+        "clearance_level": "gray" if is_expired else assessment.clearance_level,
+        "assessment_date": assessment.assessment_date,
+        "valid_until": assessment.valid_until,
+        "is_expired": is_expired,
+        "verification_timestamp": datetime.utcnow()
     }

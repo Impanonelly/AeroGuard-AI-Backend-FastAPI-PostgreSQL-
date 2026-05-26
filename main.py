@@ -15,6 +15,7 @@ from routers import compliance
 from routers import user_management
 from routers import audit_logs
 from routers import security_settings
+from routers import readiness
 
 # ── AI Engine ────────────────────────────────────────────────────────────────
 from ai_engine.model import predict_risk as calculate_risk  # noqa: F401
@@ -44,6 +45,7 @@ app = FastAPI(
         {"name": "personnel-health",       "description": "Crew health vitals and physiological records"},
         {"name": "medical-records",        "description": "Confidential ICAO Class 1/2/3 medical certificates (Medical Officer only)"},
         {"name": "alertness-fatigue",      "description": "Real-time alertness scoring and fatigue trend analysis"},
+        {"name": "readiness-assessment",   "description": "Manual aircrew readiness assessments with AI scoring and anomaly detection"},
         {"name": "alcohol-substance",      "description": "BAC screening and substance testing (RCAA zero-tolerance)"},
         {"name": "operational-readiness",  "description": "Fitness-for-duty assessment with AI-assisted scoring"},
         {"name": "flight-duty",            "description": "Flight duty period lifecycle with pre-flight safety gates"},
@@ -97,6 +99,9 @@ app.include_router(medical_records.router,   prefix="/medical",          tags=["
 
 # Alertness & Fatigue
 app.include_router(alertness.router,         prefix="/alertness",        tags=["alertness-fatigue"])
+
+# Readiness Assessment (Manual Web-Based)
+app.include_router(readiness.router,         prefix="/readiness",        tags=["readiness-assessment"])
 
 # Alcohol & Substance
 app.include_router(alcohol.router,           prefix="/alcohol",          tags=["alcohol-substance"])
@@ -155,7 +160,7 @@ def read_root():
         "endpoints": "/docs",
         "modules": [
             "Dashboard", "Personnel Health", "Medical Records",
-            "Alertness & Fatigue", "Alcohol & Substance", "Operational Readiness",
+            "Alertness & Fatigue", "Readiness Assessment", "Alcohol & Substance", "Operational Readiness",
             "Flight Duty", "Risk Prediction", "FRMS Monitoring", "Safety Analytics",
             "Compliance", "Notifications", "Reports", "User Management",
             "Audit Logs", "Security Settings",
