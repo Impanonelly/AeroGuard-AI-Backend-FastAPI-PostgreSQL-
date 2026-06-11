@@ -4,7 +4,7 @@ from sqlalchemy import desc
 from typing import List, Optional
 from datetime import datetime, timedelta
 from database import get_db
-from models import FitnessAssessment, HealthRecord, AlcoholScreening, User, AuditLog
+from models import FitnessAssessment, HealthRecord, AlcoholScreening, User, AuditLog, MedicalRecord, Notification
 from auth.dependencies import get_current_user
 from auth.permissions import has_permission, VIEW_CREW_DATA, VIEW_ALL_PERSONNEL, SUBMIT_ASSESSMENT
 from pydantic import BaseModel, Field
@@ -29,6 +29,22 @@ class FitnessAssessmentCreate(BaseModel):
     feeling_ready: str = Field(..., pattern="^(yes|no|uncertain)$")
     flight_number: Optional[str] = None
     notes: Optional[str] = None
+    consecutive_work_days: Optional[int] = 1
+    medical_decision: Optional[str] = None
+
+    # Apple Watch Telemetry
+    apple_watch_sleep_hours: Optional[float] = None
+    apple_watch_sleep_quality: Optional[float] = None
+    apple_watch_resting_hr: Optional[float] = None
+    apple_watch_current_hr: Optional[float] = None
+    apple_watch_activity_level: Optional[float] = None
+
+    # Pre-Flight Self Assessment
+    self_alertness_level: Optional[float] = None
+    alcohol_declared: Optional[bool] = False
+
+    # Reaction Time Assessment
+    reaction_time_ms: Optional[float] = None
 
 class SupervisorOverrideRequest(BaseModel):
     justification: str = Field(..., min_length=20, description="Must provide a detailed justification")
@@ -73,6 +89,17 @@ class FitnessAssessmentResponse(BaseModel):
     anomaly_description: Optional[str]
     manual_review_required: bool
 
+    # Apple Watch & Redesign Telemetry
+    apple_watch_sleep_hours: Optional[float] = None
+    apple_watch_sleep_quality: Optional[float] = None
+    apple_watch_resting_hr: Optional[float] = None
+    apple_watch_current_hr: Optional[float] = None
+    apple_watch_activity_level: Optional[float] = None
+    self_alertness_level: Optional[float] = None
+    alcohol_declared: bool
+    reaction_time_ms: Optional[float] = None
+    consecutive_work_days: Optional[int] = None
+
     class Config:
         from_attributes = True
 
@@ -87,32 +114,44 @@ def create_fitness_assessment(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Create a fitness-for-duty assessment from manual inputs.
-    Calculates fatigue score, readiness classification, and executes response consistency checks.
+    Create an aviation operational readiness assessment from manual inputs, Apple Watch telemetry, and reaction time.
+    Calculates fatigue score (0-100), readiness score (0-100), risk levels, and clearance status.
     """
     if not has_permission(current_user, SUBMIT_ASSESSMENT):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied.")
 
-    # ═══ FATIGUE SCORE CALCULATION ═══
-    sleep_factor = max(0, 10 - data.sleep_hours_last_night) * 5  # 0-50
-    stress_factor = data.stress_level * 4                        # 0-40
-    fatigue_factor = data.fatigue_level * 3                      # 0-30
-    duty_factor = min(data.duty_hours_today, 12) * 2             # 0-24
-
-    base_fatigue = (sleep_factor + stress_factor + fatigue_factor + duty_factor) / 1.44
-    calculated_fatigue_score = min(100, max(0, base_fatigue))
-
-    # Map legacy scores for UI charts
-    mapped_fatigue_score = 100 - calculated_fatigue_score
-    mapped_stress_score = 100 - data.stress_level * 10
-    mapped_psychological_score = 100 - data.workload_perception * 10
-    mapped_health_score = 100.0 if data.physical_condition == "excellent" else (
-        85.0 if data.physical_condition == "good" else (
-            70.0 if data.physical_condition == "fair" else 50.0
-        )
+    # 1. Fetch latest health record and medical certificate status
+    latest_health = (
+        db.query(HealthRecord)
+        .filter(HealthRecord.user_id == data.user_id)
+        .order_by(desc(HealthRecord.record_date))
+        .first()
     )
+    heart_rate = latest_health.heart_rate if (latest_health and latest_health.heart_rate) else 72.0
+    bp_sys = latest_health.blood_pressure_systolic if (latest_health and latest_health.blood_pressure_systolic) else 120.0
+    bp_dia = latest_health.blood_pressure_diastolic if (latest_health and latest_health.blood_pressure_diastolic) else 80.0
 
-    # Check latest alcohol screening
+    latest_medical = (
+        db.query(MedicalRecord)
+        .filter(MedicalRecord.user_id == data.user_id)
+        .order_by(desc(MedicalRecord.record_date))
+        .first()
+    )
+    
+    medical_ok = True
+    medical_details = "Valid ICAO Medical Certificate"
+    if latest_medical:
+        if latest_medical.clearance_status != "cleared":
+            medical_ok = False
+            medical_details = f"Restricted/Suspended Medical Certificate ({latest_medical.clearance_status})"
+        elif latest_medical.valid_until and latest_medical.valid_until < datetime.utcnow():
+            medical_ok = False
+            medical_details = f"Expired Medical Certificate (expired on {latest_medical.valid_until.strftime('%Y-%m-%d')})"
+    else:
+        medical_ok = False
+        medical_details = "No Medical Record registered in database"
+
+    # 2. Check latest alcohol screening (last 12h)
     latest_alcohol = (
         db.query(AlcoholScreening)
         .filter(
@@ -122,70 +161,135 @@ def create_fitness_assessment(
         .order_by(desc(AlcoholScreening.screening_date))
         .first()
     )
-    alcohol_score = 100.0
-    if latest_alcohol and latest_alcohol.bac_level > 0.00:
-        alcohol_score = 0.0  # Force grounding due to BAC breach
+    has_alcohol_violation = (latest_alcohol and latest_alcohol.bac_level > 0.00) or data.alcohol_declared
 
-    # ═══ READINESS CLASSIFICATION ═══
-    if calculated_fatigue_score < 30 and data.feeling_ready == "yes":
-        classification = "Fit for Duty"
-        readiness_score = 95
-        risk_level = "LOW"
-        clearance_status = "cleared"
-        clearance_level = "green"
-        restrictions = None
-    elif calculated_fatigue_score < 50 and data.feeling_ready != "no":
-        classification = "Fit for Duty"
-        readiness_score = 80
-        risk_level = "LOW"
-        clearance_status = "cleared"
-        clearance_level = "green"
-        restrictions = None
-    elif calculated_fatigue_score < 70:
-        classification = "Limited Duty"
-        readiness_score = 60
-        risk_level = "MEDIUM"
-        clearance_status = "conditional"
-        clearance_level = "yellow"
-        restrictions = '["Monitor fatigue during flight", "Maximum 6-hour duty period"]'
+    # 3. Calculate Fatigue Score (0-100) (higher is worse)
+    sleep_hrs = data.apple_watch_sleep_hours if data.apple_watch_sleep_hours is not None else data.sleep_hours_last_night
+    sleep_quality = data.apple_watch_sleep_quality if data.apple_watch_sleep_quality is not None else (data.sleep_quality_rating * 10.0)
+
+    sleep_penalty = max(0.0, 8.0 - sleep_hrs) * 12.5
+    quality_penalty = max(0.0, 80.0 - sleep_quality) * 0.5
+    self_fatigue_penalty = data.fatigue_level * 3.0
+    duty_penalty = max(0.0, data.duty_hours_today - 8.0) * 4.0
+
+    # Heart Rate elevation penalty
+    hr_penalty = 0.0
+    watch_rhr = data.apple_watch_resting_hr if data.apple_watch_resting_hr is not None else (latest_health.resting_heart_rate if latest_health else 65.0)
+    watch_cur_hr = data.apple_watch_current_hr if data.apple_watch_current_hr is not None else heart_rate
+    if watch_rhr and watch_cur_hr:
+        hr_diff = watch_cur_hr - watch_rhr
+        if hr_diff > 15.0:
+            hr_penalty = min(15.0, (hr_diff - 15.0) * 1.0)
+
+    # Reaction Time penalty
+    rt_penalty = 0.0
+    if data.reaction_time_ms is not None:
+        if data.reaction_time_ms > 280.0:
+            rt_penalty = min(25.0, (data.reaction_time_ms - 280.0) * 0.15)
+        elif data.reaction_time_ms < 150.0:
+            rt_penalty = 5.0  # Suspiciously fast click
+
+    calculated_fatigue_score = min(100.0, max(0.0, sleep_penalty + quality_penalty + self_fatigue_penalty + duty_penalty + hr_penalty + rt_penalty))
+
+    # 4. Calculate Readiness Score (0-100) (higher is better)
+    base_readiness = 100.0
+    fatigue_deduction = calculated_fatigue_score * 0.5
+    stress_deduction = data.stress_level * 2.5
+    alertness_rating = data.self_alertness_level if data.self_alertness_level is not None else (10.0 - data.fatigue_level)
+    alertness_deduction = max(0.0, 10.0 - alertness_rating) * 2.5
+
+    calculated_readiness_score = min(100.0, max(0.0, base_readiness - (fatigue_deduction + stress_deduction + alertness_deduction)))
+
+    # Force 0 readiness on critical violations
+    if has_alcohol_violation or not medical_ok:
+        calculated_readiness_score = 0.0
+
+    # 5. Determine Operational Clearance and Risk Levels
+    restrictions_list = []
+    medical_decision = getattr(data, 'medical_decision', None)
+    if medical_decision:
+        if medical_decision in ["Fit for Duty", "cleared"]:
+            classification = "Fit for Duty"
+            risk_level = "LOW"
+            clearance_status = "cleared"
+            clearance_level = "green"
+        elif medical_decision in ["Monitoring Required", "conditional"]:
+            classification = "Limited Duty"
+            risk_level = "MEDIUM"
+            clearance_status = "conditional"
+            clearance_level = "yellow"
+            restrictions_list.extend(["Maximum 6-hour duty period", "No night operations", "Monitor fatigue during flight"])
+        elif medical_decision in ["Restricted", "restricted"]:
+            classification = "Not Fit for Duty"
+            risk_level = "HIGH"
+            clearance_status = "restricted"
+            clearance_level = "orange"
+            restrictions_list.append("RESTRICTED - Threshold exceeded. Medical review required.")
+        elif medical_decision in ["Grounded", "grounded"]:
+            classification = "Not Fit for Duty"
+            risk_level = "CRITICAL"
+            clearance_status = "grounded"
+            clearance_level = "red"
+            restrictions_list.append("GROUNDED - Critical fatigue risk detected. Flight operations prohibited.")
+        else:
+            classification = "Fit for Duty"
+            risk_level = "LOW"
+            clearance_status = "cleared"
+            clearance_level = "green"
     else:
-        classification = "Not Fit for Duty"
-        readiness_score = 25
-        risk_level = "HIGH"
-        clearance_status = "grounded"
-        clearance_level = "red"
-        restrictions = '["GROUNDED - High fatigue risk", "Minimum 10-hour rest required"]'
+        if not medical_ok:
+            classification = "Not Fit for Duty"
+            risk_level = "CRITICAL"
+            clearance_status = "grounded"
+            clearance_level = "red"
+            restrictions_list.append(f"GROUNDED - {medical_details}")
+        elif has_alcohol_violation:
+            classification = "Not Fit for Duty"
+            risk_level = "CRITICAL"
+            clearance_status = "grounded"
+            clearance_level = "red"
+            restrictions_list.append("GROUNDED - Pre-flight alcohol declaration or test violation")
+        elif calculated_fatigue_score > 65.0 or calculated_readiness_score < 50.0:
+            classification = "Not Fit for Duty"
+            risk_level = "HIGH"
+            clearance_status = "grounded"
+            clearance_level = "red"
+            restrictions_list.append("GROUNDED - High fatigue index / low readiness score. Minimum 10h rest required.")
+        elif calculated_fatigue_score > 35.0 or calculated_readiness_score < 80.0:
+            classification = "Limited Duty"
+            risk_level = "MEDIUM"
+            clearance_status = "conditional"
+            clearance_level = "yellow"
+            restrictions_list.extend(["Maximum 6-hour duty period", "No night operations", "Monitor fatigue during flight"])
+        else:
+            classification = "Fit for Duty"
+            risk_level = "LOW"
+            clearance_status = "cleared"
+            clearance_level = "green"
 
-    # Alcohol override
-    if alcohol_score < 100.0:
-        classification = "Not Fit for Duty"
-        readiness_score = 10
-        risk_level = "CRITICAL"
-        clearance_status = "grounded"
-        clearance_level = "red"
-        restrictions = '["GROUNDED - Pre-flight alcohol test violation", "Mandatory supervisor review"]'
+    # Map legacy score outputs for UI charts compatibility
+    mapped_health_score = 100.0 if data.physical_condition == "excellent" else (
+        85.0 if data.physical_condition == "good" else (
+            70.0 if data.physical_condition == "fair" else 50.0
+        )
+    )
+    mapped_stress_score = 100.0 - (data.stress_level * 10.0)
+    mapped_psychological_score = 100.0 - (data.workload_perception * 10.0)
 
-    # ═══ RESPONSE VALIDATION - DETECT INCONSISTENCIES ═══
+    # 6. Response Validation Anomalies
     anomalies = []
-    
-    # Rule 1: Sleep < 5 hours but fatigue level is low
     if data.sleep_hours_last_night < 5 and data.fatigue_level <= 2:
         anomalies.append("sleep_fatigue_discrepancy")
-
-    # Rule 2: Workload >= 8 but stress level is low
     if data.workload_perception >= 8 and data.stress_level <= 2:
         anomalies.append("workload_stress_discrepancy")
-
-    # Rule 3: Duty hours > 12 but fatigue level is low
     if data.duty_hours_today > 12 and data.fatigue_level <= 2:
         anomalies.append("duty_fatigue_discrepancy")
 
-    # Rule 4: Checked severe symptoms (sluggishness, micro-sleeps) but fatigue level is low
     symptoms_lower = (data.illness_symptoms or "").lower()
     if any(s in symptoms_lower for s in ["sluggishness", "micro-sleeps", "microsleep"]) and data.fatigue_level <= 2:
         anomalies.append("contradictory_symptoms")
 
-    # Rule 5: Pattern copying anomaly (5 identical consecutive entries)
+    # Pattern copying anomaly (5 identical consecutive entries)
     recent = db.query(FitnessAssessment).filter(
         FitnessAssessment.user_id == data.user_id
     ).order_by(desc(FitnessAssessment.assessment_date)).limit(4).all()
@@ -204,40 +308,45 @@ def create_fitness_assessment(
         if pattern_match:
             anomalies.append("pattern_copying_anomaly")
 
+    if bp_sys > 140 or bp_sys < 90 or bp_dia > 90 or bp_dia < 60:
+        anomalies.append("abnormal_blood_pressure_alert")
+
     anomaly_detected = len(anomalies) > 0
     anomaly_str = ", ".join(anomalies) if anomaly_detected else None
     anomaly_desc = f"Consistency check flagged: {anomaly_str}" if anomaly_detected else None
     review_required = anomaly_detected
 
-    # If anomaly detected, force manual review and demote clearance if cleared
     if anomaly_detected and clearance_status == "cleared":
         clearance_status = "conditional"
         clearance_level = "yellow"
         classification = "Limited Duty"
-        if not restrictions:
-            restrictions = '["Flagged by Response Consistency AI", "Requires supervisor verification"]'
+        restrictions_list.append("Flagged by Response Consistency AI (requires supervisor override)")
 
+    import json
+    restrictions_json = json.dumps(restrictions_list) if restrictions_list else None
+
+    # Instantiate DB model instance
     assessment = FitnessAssessment(
         user_id=data.user_id,
-        overall_score=readiness_score,
+        overall_score=calculated_readiness_score,
         health_score=mapped_health_score,
-        fatigue_score=mapped_fatigue_score,
-        alcohol_substance_score=alcohol_score,
+        fatigue_score=calculated_fatigue_score,
+        alcohol_substance_score=0.0 if has_alcohol_violation else 100.0,
         psychological_score=mapped_psychological_score,
         stress_score=mapped_stress_score,
         risk_level=risk_level,
-        alertness_level="high" if mapped_fatigue_score >= 80 else ("moderate" if mapped_fatigue_score >= 60 else "low"),
+        alertness_level="high" if calculated_readiness_score >= 80 else ("moderate" if calculated_readiness_score >= 50 else "low"),
         fit_for_duty=(clearance_status != "grounded"),
         clearance_status=clearance_status,
         clearance_level=clearance_level,
-        restrictions=restrictions,
-        assessed_by="AeroGuard AI Consistency Engine",
+        restrictions=restrictions_json,
+        assessed_by=current_user.full_name if current_user.role == "medical_officer" else "AeroGuard AI Readiness Engine",
         valid_until=datetime.utcnow() + timedelta(hours=12),
         flight_number=data.flight_number,
-        ai_confidence_score=98.5,
+        ai_confidence_score=99.2,
         notes=data.notes,
+        consecutive_work_days=data.consecutive_work_days,
         
-        # New manual declaration fields
         sleep_hours_last_night=data.sleep_hours_last_night,
         sleep_quality_rating=data.sleep_quality_rating,
         stress_level=data.stress_level,
@@ -249,7 +358,17 @@ def create_fitness_assessment(
         medication_taken=data.medication_taken,
         feeling_ready=data.feeling_ready,
         
-        # Anomaly flags
+        # New telemetry
+        apple_watch_sleep_hours=data.apple_watch_sleep_hours,
+        apple_watch_sleep_quality=data.apple_watch_sleep_quality,
+        apple_watch_resting_hr=data.apple_watch_resting_hr,
+        apple_watch_current_hr=data.apple_watch_current_hr,
+        apple_watch_activity_level=data.apple_watch_activity_level,
+        self_alertness_level=data.self_alertness_level,
+        alcohol_declared=data.alcohol_declared,
+        reaction_time_ms=data.reaction_time_ms,
+        
+        # Anomalies
         response_anomaly_detected=anomaly_detected,
         anomaly_type=anomaly_str,
         anomaly_description=anomaly_desc,
@@ -258,12 +377,23 @@ def create_fitness_assessment(
     )
 
     db.add(assessment)
+    
+    # Auto-generate notification for grounded / restricted fatigue alerts
+    if clearance_status in ["grounded", "restricted"]:
+        db.add(Notification(
+            user_id=data.user_id,
+            title=f"⚠️ Fatigue Alert - {classification.upper()}",
+            message=f"Crew member flagged as '{clearance_status.upper()}' by Medical Officer {current_user.full_name}. Reason: {data.notes or 'Fatigue review required.'}",
+            notification_type="alert",
+            priority="critical" if clearance_status == "grounded" else "high",
+            action_required=True,
+        ))
     db.add(AuditLog(
         user_id=current_user.id,
         action_type="readiness_assessment_submitted",
         resource_type="readiness_assessment",
         resource_id=str(data.user_id),
-        action_details=f"Readiness check -> {clearance_status.upper()} | Score: {readiness_score} | Flags: {anomaly_str or 'NONE'}",
+        action_details=f"Readiness check -> {clearance_status.upper()} | Score: {calculated_readiness_score} | Flags: {anomaly_str or 'NONE'}",
         module="Operational Readiness",
         success=True,
     ))

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from database import get_db
 from models import MedicalRecord, User, UserRole, AuditLog
 from auth.dependencies import get_current_user
-from auth.permissions import has_permission, VIEW_MEDICAL_RECORDS, CREATE_MEDICAL_RECORDS
+from auth.permissions import has_permission, VIEW_MEDICAL_RECORDS, CREATE_MEDICAL_RECORDS, VIEW_CREW_DATA
 
 router = APIRouter()
 
@@ -155,7 +155,8 @@ def get_latest_medical_record(
     current_user: User = Depends(get_current_user),
 ):
     """Get the most recent medical record for a user."""
-    if not has_permission(current_user, VIEW_MEDICAL_RECORDS) and current_user.id != user_id:
+    can_view = has_permission(current_user, VIEW_MEDICAL_RECORDS) or has_permission(current_user, VIEW_CREW_DATA) or current_user.id == user_id
+    if not can_view:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
 
     record = (

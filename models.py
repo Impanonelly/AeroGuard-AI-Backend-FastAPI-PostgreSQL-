@@ -102,6 +102,7 @@ class HealthRecord(Base):
     # Vitals
     record_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     heart_rate = Column(Float, nullable=True)              # bpm
+    resting_heart_rate = Column(Float, nullable=True)      # bpm
     blood_pressure_systolic = Column(Float, nullable=True) # mmHg
     blood_pressure_diastolic = Column(Float, nullable=True)
     temperature = Column(Float, nullable=True)             # Celsius
@@ -271,6 +272,20 @@ class FitnessAssessment(Base):
     # Manual Inputs - Self-Assessment
     feeling_ready = Column(String, nullable=True)             # yes, no, uncertain
 
+    # Apple Watch Telemetry Data
+    apple_watch_sleep_hours = Column(Float, nullable=True)
+    apple_watch_sleep_quality = Column(Float, nullable=True)
+    apple_watch_resting_hr = Column(Float, nullable=True)
+    apple_watch_current_hr = Column(Float, nullable=True)
+    apple_watch_activity_level = Column(Float, nullable=True)
+
+    # Pre-Flight Self Assessment additions
+    self_alertness_level = Column(Float, nullable=True)
+    alcohol_declared = Column(Boolean, default=False)
+
+    # Reaction Time Assessment
+    reaction_time_ms = Column(Float, nullable=True)
+
     # Composite scores (0-100)
     overall_score = Column(Float, nullable=False)
     health_score = Column(Float, nullable=True)
@@ -312,6 +327,7 @@ class FitnessAssessment(Base):
     ai_confidence_score = Column(Float, nullable=True)
 
     notes = Column(Text, nullable=True)
+    consecutive_work_days = Column(Integer, nullable=True, default=1)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -715,3 +731,55 @@ class RiskPredictionLog(Base):
 
     # Relationships
     user = relationship("User", back_populates="risk_predictions", foreign_keys=[user_id])
+
+
+# ============================================================================
+# CUSTOM OVERRIDE & SCREENING MODELS (FROM REDESIGNED GATES)
+# ============================================================================
+
+class Alert(Base):
+    __tablename__ = "alerts"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True)
+    title = Column(String)
+    description = Column(String)
+    time_ago = Column(String)
+    type = Column(String) # "medical", "duty", "fatigue", "inconsistency", "training", "alcohol"
+    is_read = Column(Boolean, default=False)
+
+class AlcoholTest(Base):
+    __tablename__ = "alcohol_tests"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True)
+    test_time = Column(String)
+    bac_percentage = Column(Float)
+    result = Column(String)  # "PASS" or "FAIL"
+    method = Column(String)  # "Hardware" or "Manual"
+    device_info = Column(String, nullable=True)  # e.g., "AlcoQuant-COM3" or "Manual Entry"
+    
+    # Medical Officer compliance entries
+    screening_type = Column(String, nullable=True)
+    medical_officer = Column(String, nullable=True)
+    medical_recommendation = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
+
+class DutyClearanceAction(Base):
+    __tablename__ = "duty_clearance_actions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True)
+    supervisor_id = Column(Integer, index=True)
+    action = Column(String)  # "APPROVE", "REJECT", "ESCALATE", "MONITOR", "RESTRICT"
+    escalated_to = Column(String, nullable=True)  # "Medical Officer" or "Operations Manager"
+    reason = Column(String, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+class DashboardSummary(Base):
+    __tablename__ = "dashboard_summary"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True)
+    readiness_status = Column(String) # "Cleared for Duty", "Limited Duty", "Not Fit for Duty"
+    fatigue_score = Column(Integer)
+    sleep_hours = Column(Float)
+    bac_status = Column(String) # "PASS", "FAIL"
+    bac_percentage = Column(Float)
+    alertness_score = Column(Integer)

@@ -33,6 +33,7 @@ def seed():
         
         # User A: The "Golden" Pilot
         pilot_a = User(
+            id=11,
             full_name="Capt. Emmanuel NIYONZIMA",
             email="emmanuel@demo.com",
             password_hash=hashed,
@@ -43,6 +44,7 @@ def seed():
         
         # User B: The "High Risk" Pilot
         pilot_b = User(
+            id=12,
             full_name="F/O Patrick MUGISHA",
             email="patrick@demo.com",
             password_hash=hashed,
@@ -53,6 +55,7 @@ def seed():
         
         # User C: The "Grounded" Pilot
         pilot_c = User(
+            id=13,
             full_name="Capt. Grace MUTESI",
             email="grace@demo.com",
             password_hash=hashed,
@@ -63,9 +66,16 @@ def seed():
 
         db.add_all([pilot_a, pilot_b, pilot_c])
         db.commit()
+        
+        # Sync the primary key sequence in PostgreSQL to prevent future insertion collisions
+        from sqlalchemy import text
+        db.execute(text("SELECT setval('users_id_seq', (SELECT MAX(id) FROM users))"))
+        db.commit()
+
         db.refresh(pilot_a)
         db.refresh(pilot_b)
         db.refresh(pilot_c)
+
  
         # 2.5 Resolve or Create Supervisor / Medical Officer
         supervisor = db.query(User).filter(User.role.in_(["medical_officer", "supervisor", "safety_officer", "administrator"])).first()
@@ -194,7 +204,7 @@ def seed():
             alertness_score=92.0,
             alertness_level="high",
             reaction_time_ms=240.0,
-            heart_rate=64.0,
+            
             risk_flag=False
         ))
 
@@ -267,6 +277,31 @@ def seed():
             confidence_score=91.0
         ))
 
+        # Add single Medical Record for Pilot B (Patrick MUGISHA)
+        db.add(MedicalRecord(
+            user_id=pilot_b.id,
+            record_date=datetime.utcnow() - timedelta(days=60),
+            examination_type="annual",
+            examining_physician="Dr. Jean HABIMANA",
+            medical_facility="Kigali Aviation Medical Center",
+            medical_class="Class 1",
+            certificate_number="MC-2026-102",
+            valid_from=datetime.utcnow() - timedelta(days=60),
+            valid_until=datetime.utcnow() + timedelta(days=305),
+            clearance_status="cleared",
+            vision_ok=True,
+            hearing_ok=True,
+            cardiovascular_ok=True,
+            neurological_ok=True,
+            respiratory_ok=True,
+            musculoskeletal_ok=True,
+            psychiatric_ok=True,
+            limitations="Must wear corrective lenses for distant vision",
+            conditions="""[{"id": 1, "condition": "Mild Hypertension", "diagnosedDate": "2024-03-12", "severity": "Mild", "controlStatus": "controlled", "restrictions": ["Annual cardiovascular review required", "Blood pressure must remain under 140/90"]}]""",
+            medications="""[{"id": 1, "name": "Lisinopril", "dosage": "10mg", "frequency": "Once daily", "prescribedBy": "Dr. Jean HABIMANA", "flightSafetyWarning": false}]"""
+        ))
+
+
         # 5. Add Records for Pilot C (Grounded - Substance)
         db.add(HealthRecord(
             user_id=pilot_c.id,
@@ -321,6 +356,31 @@ def seed():
             risk_score=95.0,
             confidence_score=93.0
         ))
+
+        # Add single Medical Record for Pilot C (Grace MUTESI)
+        db.add(MedicalRecord(
+            user_id=pilot_c.id,
+            record_date=datetime.utcnow() - timedelta(days=30),
+            examination_type="periodic",
+            examining_physician="Dr. Jean HABIMANA",
+            medical_facility="Kigali Aviation Medical Center",
+            medical_class="Class 1",
+            certificate_number="MC-2026-103",
+            valid_from=datetime.utcnow() - timedelta(days=30),
+            valid_until=datetime.utcnow() - timedelta(days=1), # Expired yesterday/suspended
+            clearance_status="suspended",
+            vision_ok=True,
+            hearing_ok=True,
+            cardiovascular_ok=True,
+            neurological_ok=True,
+            respiratory_ok=True,
+            musculoskeletal_ok=True,
+            psychiatric_ok=True,
+            limitations="Grounded due to substance abuse screening violation.",
+            conditions="""[{"id": 1, "condition": "Substance Use Disorder - Cannabis", "diagnosedDate": "2026-06-01", "severity": "Moderate", "controlStatus": "uncontrolled", "restrictions": ["Mandatory rehabilitation referral", "Subject to random testing upon reinstatement"]}]""",
+            medications="""[]"""
+        ))
+
 
         # 6. Seed other aviators (if any) with realistic low-to-medium risk scores
         other_aviators = db.query(User).filter(User.role == "aviator", ~User.email.like("%@demo.com")).all()

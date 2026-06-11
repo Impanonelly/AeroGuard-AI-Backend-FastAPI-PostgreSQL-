@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, EmailStr
 from database import get_db
 from models import User, UserRole, AuditLog
 from auth.dependencies import get_current_user
-from auth.permissions import has_permission, MANAGE_USERS, VIEW_ALL_PERSONNEL
+from auth.permissions import has_permission, MANAGE_USERS, VIEW_ALL_PERSONNEL, VIEW_CREW_DATA
 from auth.utils import hash_password
 
 router = APIRouter()
@@ -63,9 +63,9 @@ def list_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all users. Administrator only."""
-    if not has_permission(current_user, MANAGE_USERS):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator role required.")
+    """List all users. Administrator or crew viewer only."""
+    if not (has_permission(current_user, MANAGE_USERS) or has_permission(current_user, VIEW_CREW_DATA)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. Administrator or crew viewer permissions required.")
 
     q = db.query(User)
     if role:
@@ -233,6 +233,37 @@ def reactivate_user(
     ))
     db.commit()
     return {"message": f"User {user.full_name} reactivated successfully.", "user_id": user_id}
+
+
+@router.delete("/{user_id}/hard-delete")
+def hard_delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Hard delete a user from the database. Administrator only."""
+    if not has_permission(current_user, MANAGE_USERS):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator role required.")
+
+    if current_user.id == user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete your own account.")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    db.delete(user)
+    db.add(AuditLog(
+        user_id=current_user.id,
+        action_type="user_hard_deleted",
+        resource_type="user",
+        resource_id=str(user_id),
+        action_details=f"User #{user_id} ({user.full_name}, Email: {user.email}) permanently deleted by Admin: {current_user.full_name}",
+        module="User Management",
+        success=True,
+    ))
+    db.commit()
+    return {"message": f"User {user.full_name} hard-deleted successfully.", "user_id": user_id}
 
 
 @router.get("/roles/summary")

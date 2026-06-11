@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 from database import get_db
-from models import ReadinessAssessment, User, AuditLog
+from models import ReadinessAssessment, User, AuditLog, AlcoholScreening, HealthRecord
 from auth.dependencies import get_current_user
 from auth.permissions import has_permission, VIEW_CREW_DATA, SUBMIT_ASSESSMENT
 
@@ -61,34 +61,59 @@ def get_readiness_history(
     return {"assessments": assessments, "total_count": len(assessments)}
 
 def validate_and_score_assessment(assessment: ReadinessAssessment, user: User, db: Session):
+    # Fetch latest health record to get heart rate and blood pressure
+    latest_health = (
+        db.query(HealthRecord)
+        .filter(HealthRecord.user_id == user.id)
+        .order_by(desc(HealthRecord.record_date))
+        .first()
+    )
+    heart_rate = latest_health.heart_rate if (latest_health and latest_health.heart_rate) else 72.0
+    bp_sys = latest_health.blood_pressure_systolic if (latest_health and latest_health.blood_pressure_systolic) else 120.0
+    bp_dia = latest_health.blood_pressure_diastolic if (latest_health and latest_health.blood_pressure_diastolic) else 80.0
+
     sleep_factor = max(0, 10 - assessment.sleep_hours_last_night) * 5
     stress_factor = assessment.stress_level * 4
     fatigue_factor = assessment.fatigue_level * 3
     duty_factor = min(assessment.duty_hours_today, 12) * 2
-    base_fatigue = (sleep_factor + stress_factor + fatigue_factor + duty_factor) / 1.44
+    hr_factor = max(0, heart_rate - 70) * 0.4
+    
+    base_fatigue = (sleep_factor + stress_factor + fatigue_factor + duty_factor + hr_factor) / 1.44
     assessment.fatigue_score = min(100, max(0, base_fatigue))
 
-    if assessment.fatigue_score < 30 and assessment.feeling_ready == "yes":
+    # Check latest alcohol screening in last 12 hours
+    latest_alcohol = (
+        db.query(AlcoholScreening)
+        .filter(
+            AlcoholScreening.user_id == user.id,
+            AlcoholScreening.screening_date >= datetime.utcnow() - timedelta(hours=12),
+        )
+        .order_by(desc(AlcoholScreening.screening_date))
+        .first()
+    )
+    has_alcohol_violation = latest_alcohol and latest_alcohol.bac_level > 0.00
+
+    # ═══ CLASSIFICATION ═══
+    if has_alcohol_violation:
+        assessment.readiness_classification = "Not Fit for Duty"
+        assessment.overall_readiness_score = 0.0
+        assessment.risk_level = "CRITICAL"
+        assessment.clearance_status = "grounded"
+    elif assessment.fatigue_score <= 30.0:
         assessment.readiness_classification = "Fit for Duty"
-        assessment.overall_readiness_score = 90
-    elif assessment.fatigue_score < 50:
-        assessment.readiness_classification = "Fit for Duty"
-        assessment.overall_readiness_score = 80
-    elif assessment.fatigue_score < 70:
-        assessment.readiness_classification = "Limited Duty"
-        assessment.overall_readiness_score = 50
+        assessment.overall_readiness_score = 90.0 - (assessment.fatigue_score * 0.5)
+        assessment.risk_level = "LOW"
+        assessment.clearance_status = "cleared"
+    elif assessment.fatigue_score <= 60.0:
+        assessment.readiness_classification = "Monitor / Limited Duty"
+        assessment.overall_readiness_score = 70.0 - ((assessment.fatigue_score - 30.0) * 0.6)
+        assessment.risk_level = "MEDIUM"
+        assessment.clearance_status = "conditional"
     else:
         assessment.readiness_classification = "Not Fit for Duty"
-        assessment.overall_readiness_score = 20
-
-    if assessment.fatigue_score < 30:
-        assessment.risk_level = "LOW"
-    elif assessment.fatigue_score < 50:
-        assessment.risk_level = "MEDIUM"
-    elif assessment.fatigue_score < 75:
+        assessment.overall_readiness_score = 20.0
         assessment.risk_level = "HIGH"
-    else:
-        assessment.risk_level = "CRITICAL"
+        assessment.clearance_status = "grounded"
 
     anomalies = []
     if assessment.sleep_hours_last_night < 4 and assessment.fatigue_level < 3:
@@ -97,6 +122,11 @@ def validate_and_score_assessment(assessment: ReadinessAssessment, user: User, d
         anomalies.append("high_duty_feeling_ready")
     if assessment.stress_level > 7 and assessment.workload_perception > 8 and assessment.feeling_ready == "yes":
         anomalies.append("stress_workload_ready_mismatch")
+
+    # Abnormal blood pressure requires medical review
+    is_bp_abnormal = bp_sys > 140 or bp_sys < 90 or bp_dia > 90 or bp_dia < 60
+    if is_bp_abnormal:
+        anomalies.append("abnormal_blood_pressure_alert")
 
     if anomalies:
         assessment.response_anomaly_detected = True

@@ -20,6 +20,7 @@ class HealthRecordCreate(BaseModel):
 
     # Vitals
     heart_rate: Optional[float] = Field(None, ge=30, le=250)
+    resting_heart_rate: Optional[float] = Field(None, ge=30, le=150)
     blood_pressure_systolic: Optional[float] = Field(None, ge=60, le=250)
     blood_pressure_diastolic: Optional[float] = Field(None, ge=40, le=160)
     temperature: Optional[float] = Field(None, ge=34.0, le=42.0)
@@ -48,6 +49,7 @@ class HealthRecordResponse(BaseModel):
     user_id: int
     record_date: datetime
     heart_rate: Optional[float]
+    resting_heart_rate: Optional[float]
     blood_pressure_systolic: Optional[float]
     blood_pressure_diastolic: Optional[float]
     temperature: Optional[float]
@@ -88,6 +90,7 @@ def create_health_record(
     record = HealthRecord(
         user_id=data.user_id,
         heart_rate=data.heart_rate,
+        resting_heart_rate=data.resting_heart_rate,
         blood_pressure_systolic=data.blood_pressure_systolic,
         blood_pressure_diastolic=data.blood_pressure_diastolic,
         temperature=data.temperature,

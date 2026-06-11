@@ -109,6 +109,7 @@ if aviator_users:
                 user_id=user.id,
                 record_date=rec_date,
                 heart_rate=random.uniform(60, 85),
+                resting_heart_rate=random.uniform(55, 68),
                 blood_pressure_systolic=random.uniform(110, 130),
                 blood_pressure_diastolic=random.uniform(70, 85),
                 temperature=36.5 + random.uniform(-0.3, 0.5),

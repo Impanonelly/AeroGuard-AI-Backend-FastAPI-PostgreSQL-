@@ -16,6 +16,7 @@ from routers import user_management
 from routers import audit_logs
 from routers import security_settings
 from routers import readiness
+from routers import custom_api
 
 # ── AI Engine ────────────────────────────────────────────────────────────────
 from ai_engine.model import predict_risk as calculate_risk  # noqa: F401
@@ -145,6 +146,9 @@ app.include_router(security_settings.router, prefix="/security",         tags=["
 
 # Biometric (WebAuthn)
 app.include_router(webauthn.router,          prefix="/webauthn",         tags=["biometric-security"])
+
+# Custom API endpoints for pilot/supervisor dashboards
+app.include_router(custom_api.router,        prefix="",                  tags=["dashboard"])
 
 # ── Root endpoints ───────────────────────────────────────────────────────────
 

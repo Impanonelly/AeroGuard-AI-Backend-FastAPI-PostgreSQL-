@@ -39,6 +39,7 @@ class AlcoholScreeningResponse(BaseModel):
     test_location: Optional[str]
     notes: Optional[str]
     created_at: datetime
+    device_id: Optional[str] = "AlcoQuant 6020 Plus"
 
     class Config:
         from_attributes = True
@@ -83,19 +84,22 @@ def record_alcohol_screening(
 
     result_status, is_violation, violation_details = classify_bac(data.bac_level)
 
+    notes_with_device = data.notes or ""
+    if data.device_id:
+        notes_with_device = f"{notes_with_device} [Device: {data.device_id}]".strip()
+
     screening = AlcoholScreening(
         user_id=data.user_id,
         screening_type=data.screening_type,
         bac_level=data.bac_level,
         test_method=data.test_method,
-        device_id=data.device_id,
         result_status=result_status,
         is_violation=is_violation,
         violation_details=violation_details,
         witness_name=data.witness_name,
         supervised_by=current_user.id,
         test_location=data.test_location,
-        notes=data.notes,
+        notes=notes_with_device,
     )
 
     db.add(screening)

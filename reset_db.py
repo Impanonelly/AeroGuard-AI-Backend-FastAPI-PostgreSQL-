@@ -1,12 +1,8 @@
 import sys
 import os
-from sqlalchemy import create_engine
-from database import Base
+from database import Base, engine
 # Import all models to ensure they are registered
 from models import User, UserSecurityKey, HealthRecord, AlcoholScreening, SubstanceScreening, DutyPeriod, FitnessAssessment, AuditLog, Notification
-
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/aeroguard_db"
-engine = create_engine(DATABASE_URL)
 
 def reset_db():
     print("--- Resetting Database for Presentation ---")

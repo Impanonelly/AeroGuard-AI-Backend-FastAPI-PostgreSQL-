@@ -11,28 +11,39 @@ from auth.permissions import (
 )
 from services.pdf_generator import generate_compliance_report
 from datetime import datetime
+from typing import Optional
 
 router = APIRouter()
 
 @router.get("/compliance/pdf", response_class=Response)
 def download_compliance_pdf(
     report_type: str = "compliance",
+    user_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Exports a professional Safety & Compliance PDF Report.
-    SRS Requirement 8.1: Restricted to Safety Officers or Admins.
+    SRS Requirement 8.1: Restricted to Safety Officers or Admins for global reports.
+    Pilots are allowed to export their own safety compliance summary.
     """
+    from models import UserRole
     # 1. Permission Check (SRS Requirement 8.1)
-    if not has_permission(current_user, GENERATE_REPORTS):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission denied. You do not have permission to generate compliance reports."
-        )
+    if user_id is not None:
+        if current_user.role == UserRole.AVIATOR and current_user.id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permission denied. You can only generate compliance reports for yourself."
+            )
+    else:
+        if not has_permission(current_user, GENERATE_REPORTS):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permission denied. You do not have permission to generate compliance reports."
+            )
 
     # 2. Fetch Data (Unified Personnel Status for the report)
-    from models import UserRole, FitnessAssessment, AlcoholScreening, SubstanceScreening
+    from models import FitnessAssessment, AlcoholScreening, SubstanceScreening
     from sqlalchemy import func
 
     # Subqueries for latest assessment/clearance
@@ -42,7 +53,10 @@ def download_compliance_pdf(
         func.max(FitnessAssessment.assessment_date).label("max_date")
     ).group_by(FitnessAssessment.user_id).subquery()
 
-    pilots = db.query(User).filter(User.role == UserRole.AVIATOR).all()
+    if user_id is not None:
+        pilots = db.query(User).filter(User.id == user_id).all()
+    else:
+        pilots = db.query(User).filter(User.role == UserRole.AVIATOR).all()
     
     # Enrich objects for the PDF generator (keeping it simple for now)
     for p in pilots:

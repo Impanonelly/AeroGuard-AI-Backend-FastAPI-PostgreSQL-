@@ -111,6 +111,7 @@ ROLE_PERMISSIONS = {
         VIEW_ALERTNESS_DATA,
         VIEW_RISK_PREDICTIONS,      # read-only for medical context
         REPORT_SAFETY_INCIDENT,
+        GENERATE_REPORTS,
     ],
     UserRole.ADMINISTRATOR: [
         VIEW_OWN_PROFILE,

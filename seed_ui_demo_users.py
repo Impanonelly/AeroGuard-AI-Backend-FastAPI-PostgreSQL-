@@ -41,7 +41,7 @@ DEMO_USERS = [
         "certification_details": "Safety Manager – RCAA Certified",
     },
     {
-        "email":       "jean.habimana@aeroguard.com",
+        "email":       "jean@aeroguard.com",
         "full_name":   "Dr. Jean HABIMANA",
         "employee_id": "AKG-MED-001",
         "role":        UserRole.SAFETY_OFFICER,   # closest backend role
