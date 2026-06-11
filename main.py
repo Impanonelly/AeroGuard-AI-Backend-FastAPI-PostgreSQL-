@@ -172,6 +172,7 @@ def read_root():
     }
 
 
+@app.get("/health", tags=["root"])
 @app.get("/health-check", tags=["root"])
 def health_check():
     return {
